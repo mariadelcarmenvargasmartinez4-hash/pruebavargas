@@ -81,8 +81,8 @@ public class ProductoServiceImplTest {
         ProductoResponseDto resultado = productoService.sincronizarProductosDesdeServicio();
 
         assertNotNull(resultado);
-        assertEquals(RespuestaCatalogoEnum.SINCRONIZACION_EXITOSA.getCodigo(), resultado.getCodigo());
-        assertEquals(RespuestaCatalogoEnum.SINCRONIZACION_EXITOSA.getMensaje(), resultado.getMensaje());
+        assertEquals(RespuestaCatalogoEnum.EXITO.getCodigo(), resultado.getCodigo());
+        assertEquals(RespuestaCatalogoEnum.EXITO.getMensaje(), resultado.getMensaje());
         assertEquals(1, resultado.getProductos().size());
         verify(gestoPagoProductClient).getProductList("Bearer " + TOKEN_PRUEBA);
         verify(productoMongoRepository).saveAll(anyList());

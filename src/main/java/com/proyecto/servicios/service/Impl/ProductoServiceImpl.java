@@ -1,8 +1,10 @@
 package com.proyecto.servicios.service.Impl;
 
+import com.proyecto.servicios.client.GestoPagoAuthClient;
 import com.proyecto.servicios.client.GestoPagoProductClient;
 import com.proyecto.servicios.entity.mongo.ProductoDocument;
 import com.proyecto.servicios.enums.RespuestaCatalogoEnum;
+import com.proyecto.servicios.model.gestopago.GestoPagoAuthResponse;
 import com.proyecto.servicios.model.producto.GetProductListXmlResponse;
 import com.proyecto.servicios.model.producto.ProductoItemDto;
 import com.proyecto.servicios.model.producto.ProductoResponseDto;
@@ -13,6 +15,7 @@ import feign.FeignException;
 import feign.RetryableException;
 import jakarta.xml.bind.JAXBException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -31,8 +34,20 @@ public class ProductoServiceImpl implements ProductoService {
     private final ProductoXmlParser productoXmlParser;
     private final ProductoMongoRepository productoMongoRepository;
 
+    @Autowired(required = false)
+    private GestoPagoAuthClient gestoPagoAuthClient;
+
     @Value("${productos.api.token}")
     private String token;
+
+    @Value("${gestopago.auth.id-distribuidor:83}")
+    private Integer idDistribuidor;
+
+    @Value("${gestopago.auth.codigo-dispositivo:GPS83-TPV-17}")
+    private String codigoDispositivo;
+
+    @Value("${gestopago.auth.password:12345678}")
+    private String password;
 
     // Inyeccion de dependencias por constructor
     public ProductoServiceImpl(GestoPagoProductClient gestoPagoProductClient,
@@ -64,18 +79,33 @@ public class ProductoServiceImpl implements ProductoService {
             // Persistencia en MongoDB
             guardarEnMongo(items);
 
-            asignarRespuesta(responseDto, RespuestaCatalogoEnum.SINCRONIZACION_EXITOSA);
+            asignarRespuesta(responseDto, RespuestaCatalogoEnum.EXITO);
             responseDto.setProductos(items);
 
             log.info("Sincronizacion completada con exito en MongoDB. Total registros: {}", items.size());
             return responseDto;
 
         } catch (FeignException.Unauthorized e) {
-            log.error("Error de autorizacion al sincronizar productos (401 Unauthorized)");
+            log.error("Error de autorizacion (401) con el servicio externo: {}", e.getMessage());
             asignarRespuesta(responseDto, RespuestaCatalogoEnum.ERROR_AUTORIZACION);
 
         } catch (FeignException.Forbidden e) {
-            log.error("Token de GestoPago expirado o acceso denegado (403 Forbidden)");
+            log.warn("Token no valido o expirado (403). Renovando token automaticamente con GestoPago...");
+            String nuevoToken = renovarToken();
+            if (nuevoToken != null) {
+                try {
+                    String xmlResponse = gestoPagoProductClient.getProductList(formatearBearerToken(nuevoToken));
+                    GetProductListXmlResponse parsedXml = productoXmlParser.parse(xmlResponse);
+                    List<ProductoItemDto> items = extraerProductos(parsedXml);
+                    guardarEnMongo(items);
+                    asignarRespuesta(responseDto, RespuestaCatalogoEnum.EXITO);
+                    responseDto.setProductos(items);
+                    log.info("Sincronizacion exitosa tras auto-renovacion de token. Total: {}", items.size());
+                    return responseDto;
+                } catch (Exception ex) {
+                    log.error("Fallo la llamada tras renovar token: {}", ex.getMessage());
+                }
+            }
             asignarRespuesta(responseDto, RespuestaCatalogoEnum.ERROR_TOKEN_EXPIRADO);
 
         } catch (RetryableException e) {
@@ -111,7 +141,7 @@ public class ProductoServiceImpl implements ProductoService {
 
             // Si MongoDB esta vacio, ejecuta sincronizacion inicial automatica
             if (documentos.isEmpty()) {
-                log.info("Coleccion de MongoDB vacia. Ejecutando sincronizacion inicial");
+                log.info("Coleccion de MongoDB vacia. Ejecutando sincronizacion inicial con servicio");
                 return sincronizarProductosDesdeServicio();
             }
 
@@ -127,6 +157,24 @@ public class ProductoServiceImpl implements ProductoService {
         }
 
         return responseDto;
+    }
+
+    // Renueva el token de autenticacion consumiendo GestoPagoAuthClient
+    private String renovarToken() {
+        if (gestoPagoAuthClient == null) {
+            return null;
+        }
+        try {
+            log.info("Solicitando nuevo token de autenticacion a GestoPago");
+            GestoPagoAuthResponse response = gestoPagoAuthClient.authenticate(idDistribuidor, codigoDispositivo, password);
+            if (response != null && response.getToken() != null) {
+                this.token = response.getToken();
+                return response.getToken();
+            }
+        } catch (Exception e) {
+            log.error("Error al renovar token con GestoPago: {}", e.getMessage());
+        }
+        return null;
     }
 
     // Persiste o actualiza la lista de productos en la coleccion de MongoDB
