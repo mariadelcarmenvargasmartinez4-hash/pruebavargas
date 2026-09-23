@@ -2,7 +2,7 @@
 
 Microservicio backend desarrollado con **Spring Boot 3.3.6** y **Java 17/21**, gestionado mediante **Gradle**.
 
-## 🚀 Características y Módulos
+## Características y Módulos
 
 ### 1. Gestión de Personas
 Servicio REST para operaciones básicas sobre la entidad `Personas`:
@@ -22,7 +22,7 @@ Servicio REST para operaciones básicas sobre la entidad `Personas`:
 
 ---
 
-## 🛠 Requisitos Previos
+## Requisitos Previos
 
 - **Java JDK**: 17 o 21 (si se usa JDK 21+, asegurar versión de Lombok compatible >= 1.18.30)
 - **Gradle**: 8.x / 9.x (incluido mediante wrapper `./gradlew`)
@@ -30,7 +30,7 @@ Servicio REST para operaciones básicas sobre la entidad `Personas`:
 
 ---
 
-## ⚙️ Configuración (`application.properties`)
+## Configuración (`application.properties`)
 
 Antes de ejecutar, asegúrate de configurar las propiedades necesarias en `src/main/resources/application.properties`:
 
@@ -54,7 +54,7 @@ spring.flyway.schemas=public
 
 ---
 
-## 📦 Ejecución y Compilación
+## Ejecución y Compilación
 
 Para compilar el proyecto:
 ```bash
