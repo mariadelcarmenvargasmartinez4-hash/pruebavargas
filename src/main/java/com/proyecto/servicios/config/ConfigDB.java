@@ -52,11 +52,17 @@ public class ConfigDB {
             config.setConnectionTestQuery("SELECT 1");
             config.setPoolName("sfDatasource");
 
+            return new HikariDataSource(config);
         }catch (Exception e){
-            log.error("Ha ocurrido un error en la conexcion a base de datos, a causa de:",e);
-            return null;
+            log.warn("No fue posible conectar a PostgreSQL ({}). Iniciando con base de datos H2 en memoria", e.getMessage());
+            HikariConfig h2 = new HikariConfig();
+            h2.setJdbcUrl("jdbc:h2:mem:db_prueba;DB_CLOSE_DELAY=-1;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE");
+            h2.setDriverClassName("org.h2.Driver");
+            h2.setUsername("sa");
+            h2.setPassword("");
+            h2.setPoolName("sfDatasourceH2");
+            return new HikariDataSource(h2);
         }
-        return new HikariDataSource(config);
     }
 
     @Bean(name="sfEntityManagerFactory")

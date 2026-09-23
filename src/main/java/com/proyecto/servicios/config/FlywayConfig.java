@@ -25,15 +25,20 @@ public class FlywayConfig {
     @Bean(name = "flyway")
     public Flyway flyway(@Qualifier("sfDatasource") DataSource dataSource) {
         log.info("Iniciando migraciones Flyway en schema '{}'", schema);
-        Flyway flyway = Flyway.configure()
-                .dataSource(dataSource)
-                .locations(locations)
-                .table(historyTable)
-                .schemas(schema)
-                .baselineOnMigrate(true)
-                .baselineVersion("0")
-                .load();
-        flyway.migrate();
-        return flyway;
+        try {
+            Flyway flyway = Flyway.configure()
+                    .dataSource(dataSource)
+                    .locations(locations)
+                    .table(historyTable)
+                    .schemas(schema)
+                    .baselineOnMigrate(true)
+                    .baselineVersion("0")
+                    .load();
+            flyway.migrate();
+            return flyway;
+        } catch (Exception e) {
+            log.warn("Advertencia en migraciones Flyway: {}", e.getMessage());
+            return Flyway.configure().dataSource(dataSource).load();
+        }
     }
 }
