@@ -17,50 +17,54 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
-// DTO de peticion para el registro de cliente persona fisica y apertura de cuenta
+// DTO de peticion para el registro de cliente persona fisica, su domicilio y asignacion de cuenta bancaria
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Schema(description = "Datos para el registro de cliente persona física y asignación de cuenta bancaria")
+@Schema(description = "Datos para el registro de cliente persona física, su domicilio y asignación de cuenta bancaria")
 public class ClienteRegistroRequestDto {
 
     // Datos Personales
     @NotBlank(message = "El nombre es obligatorio")
-    @Size(max = 50, message = "El nombre no puede exceder 50 caracteres")
+    @Size(min = 2, max = 50, message = "El nombre debe tener entre 2 y 50 caracteres")
+    @Pattern(regexp = "^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ ]+$", message = "El nombre solo puede contener letras y espacios")
     @Schema(description = "Primer nombre", example = "Juan")
     private String nombre;
 
     @Size(max = 50, message = "El segundo nombre no puede exceder 50 caracteres")
+    @Pattern(regexp = "^$|^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ ]+$", message = "El segundo nombre solo puede contener letras y espacios")
     @Schema(description = "Segundo nombre (opcional)", example = "Carlos")
     private String segundoNombre;
 
     @NotBlank(message = "El apellido paterno es obligatorio")
-    @Size(max = 50, message = "El apellido paterno no puede exceder 50 caracteres")
+    @Size(min = 2, max = 50, message = "El apellido paterno debe tener entre 2 y 50 caracteres")
+    @Pattern(regexp = "^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ ]+$", message = "El apellido paterno solo puede contener letras y espacios")
     @Schema(description = "Apellido paterno", example = "Perez")
     private String apellidoPaterno;
 
     @NotBlank(message = "El apellido materno es obligatorio")
-    @Size(max = 50, message = "El apellido materno no puede exceder 50 caracteres")
+    @Size(min = 2, max = 50, message = "El apellido materno debe tener entre 2 y 50 caracteres")
+    @Pattern(regexp = "^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ ]+$", message = "El apellido materno solo puede contener letras y espacios")
     @Schema(description = "Apellido materno", example = "Lopez")
     private String apellidoMaterno;
 
     @NotNull(message = "La fecha de nacimiento es obligatoria")
-    @Past(message = "La fecha de nacimiento debe ser en el pasado")
+    @Past(message = "La fecha de nacimiento no puede ser una fecha futura")
     @JsonFormat(pattern = "yyyy-MM-dd")
     @Schema(description = "Fecha de nacimiento (AAAA-MM-DD)", example = "1990-05-15")
     private LocalDate fechaNacimiento;
 
     @NotBlank(message = "El CURP es obligatorio")
     @Pattern(regexp = "^[A-Z]{4}\\d{6}[HM][A-Z]{5}[A-Z0-9]\\d$", message = "El formato de CURP es invalido")
-    @Size(min = 18, max = 18, message = "El CURP debe tener exactamente 18 caracteres")
+    @Size(min = 18, max = 18, message = "El CURP debe contener exactamente 18 caracteres")
     @Schema(description = "CURP oficial de 18 caracteres", example = "PELJ900515HDFRPR09")
     private String curp;
 
     @NotBlank(message = "El RFC es obligatorio")
-    @Pattern(regexp = "^[A-ZÑ&]{4}\\d{6}[A-Z0-9]{3}$", message = "El formato de RFC para persona fisica es invalido")
-    @Size(min = 13, max = 13, message = "El RFC debe tener exactamente 13 caracteres")
-    @Schema(description = "RFC de persona física con homoclave (13 caracteres)", example = "PELJ9005151A2")
+    @Pattern(regexp = "^[A-ZÑ&]{4}\\d{6}[A-Z0-9]{2,3}$", message = "El formato de RFC debe contener 12 o 13 caracteres")
+    @Size(min = 12, max = 13, message = "El RFC debe tener 12 o 13 caracteres")
+    @Schema(description = "RFC de persona física (12 o 13 caracteres)", example = "PELJ9005151A2")
     private String rfc;
 
     @NotBlank(message = "El sexo es obligatorio")
@@ -86,15 +90,15 @@ public class ClienteRegistroRequestDto {
     private String correoElectronico;
 
     @NotBlank(message = "El telefono movil es obligatorio")
-    @Pattern(regexp = "^\\d{10,15}$", message = "El telefono movil debe contener entre 10 y 15 digitos")
+    @Pattern(regexp = "^\\d{10}$", message = "El telefono debe contener exactamente 10 digitos")
     @Schema(description = "Teléfono móvil a 10 dígitos", example = "5512345678")
     private String telefonoMovil;
 
-    @Pattern(regexp = "^$|^\\d{10,15}$", message = "El telefono alternativo debe contener entre 10 y 15 digitos")
+    @Pattern(regexp = "^$|^\\d{10,15}$", message = "El telefono alternativo debe ser numerico entre 10 y 15 digitos")
     @Schema(description = "Teléfono alternativo (opcional)", example = "5587654321")
     private String telefonoAlternativo;
 
-    // Domicilio
+    // Domicilio (Tabla domicilios)
     @NotBlank(message = "La calle es obligatoria")
     @Size(max = 100, message = "La calle no puede exceder 100 caracteres")
     @Schema(description = "Calle de domicilio", example = "Av. Reforma")
@@ -146,8 +150,8 @@ public class ClienteRegistroRequestDto {
     private String empresa;
 
     @NotNull(message = "El ingreso mensual es obligatorio")
-    @DecimalMin(value = "0.00", message = "El ingreso mensual no puede ser negativo")
-    @Schema(description = "Ingreso mensual comprobable", example = "35000.00")
+    @DecimalMin(value = "0.01", inclusive = true, message = "El ingreso mensual debe ser mayor a cero")
+    @Schema(description = "Ingreso mensual comprobable (mayor a cero)", example = "35000.00")
     private BigDecimal ingresoMensual;
 
     // Saldo Inicial de la cuenta bancaria

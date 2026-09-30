@@ -20,15 +20,15 @@ import lombok.Setter;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-// Entidad JPA para cuentas bancarias asociadas a clientes
+// Entidad JPA para la tabla cuentas bancarias asociadas a clientes
 @Entity
-@Table(name = "cuentas_bancarias")
+@Table(name = "cuentas")
 @Getter
 @Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class CuentaBancariaEntity {
+public class CuentaEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

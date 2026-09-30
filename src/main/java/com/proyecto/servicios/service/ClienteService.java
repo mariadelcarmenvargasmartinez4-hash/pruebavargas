@@ -4,29 +4,52 @@ import com.proyecto.servicios.model.cliente.ClienteActualizacionRequestDto;
 import com.proyecto.servicios.model.cliente.ClienteRegistroRequestDto;
 import com.proyecto.servicios.model.cliente.ClienteRegistroResponseDto;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
-// Interfaz de servicio para registro, consulta y actualizacion de clientes y cuentas bancarias
+// Interfaz de servicio para registro, consulta, actualizacion y baja logica de clientes
 public interface ClienteService {
 
-    // Registra un cliente persona fisica y genera automaticamente su cuenta bancaria con saldo inicial
+    // Registra un cliente persona fisica, su domicilio y crea automaticamente su cuenta bancaria
     ClienteRegistroResponseDto registrarCliente(ClienteRegistroRequestDto requestDto);
 
-    // Consulta todos los clientes registrados con su informacion de cuenta
+    // Consulta todos los clientes registrados
     List<ClienteRegistroResponseDto> listarClientes();
+
+    // Consulta clientes activos
+    List<ClienteRegistroResponseDto> listarClientesActivos();
 
     // Consulta cliente por identificador unico
     ClienteRegistroResponseDto obtenerClientePorId(Long id);
 
-    // Consulta cliente por clave unica de registro de poblacion (CURP)
+    // Consulta cliente por CURP
     ClienteRegistroResponseDto obtenerClientePorCurp(String curp);
 
-    // Consulta cliente por registro federal de contribuyentes (RFC)
+    // Consulta cliente por RFC
     ClienteRegistroResponseDto obtenerClientePorRfc(String rfc);
 
-    // Consulta cliente a traves del numero de cuenta bancaria
+    // Consulta cliente por correo electronico
+    ClienteRegistroResponseDto obtenerClientePorCorreo(String correo);
+
+    // Consulta cliente por numero de cuenta bancaria
     ClienteRegistroResponseDto obtenerClientePorNumeroCuenta(String numeroCuenta);
 
-    // Actualiza datos personales, contacto, domicilio y laborales (sin modificar CURP, RFC ni numero de cuenta)
+    // Busqueda por filtros parciales (nombre, apellidos)
+    List<ClienteRegistroResponseDto> buscarClientesPorNombre(String nombre);
+
+    List<ClienteRegistroResponseDto> buscarClientesPorApellidoPaterno(String apellidoPaterno);
+
+    List<ClienteRegistroResponseDto> buscarClientesPorApellidoMaterno(String apellidoMaterno);
+
+    // Consulta clientes registrados en un rango de fechas
+    List<ClienteRegistroResponseDto> buscarClientesPorRangoFechas(LocalDateTime fechaInicio, LocalDateTime fechaFin);
+
+    // Actualizacion parcial de datos personales, contacto, domicilio y laboral
     ClienteRegistroResponseDto actualizarCliente(Long id, ClienteActualizacionRequestDto requestDto);
+
+    // Baja logica de cliente (desactiva cliente y sus cuentas asociadas sin eliminar registros)
+    void desactivarCliente(Long id);
+
+    // Reactivacion de cliente
+    ClienteRegistroResponseDto reactivarCliente(Long id);
 }

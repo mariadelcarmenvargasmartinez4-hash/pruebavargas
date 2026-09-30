@@ -1,5 +1,11 @@
 package com.proyecto.servicios.config;
 
+import com.proyecto.servicios.exception.ClienteNoEncontradoException;
+import com.proyecto.servicios.exception.ClienteYaRegistradoException;
+import com.proyecto.servicios.exception.CuentaNoEncontradaException;
+import com.proyecto.servicios.exception.CurpDuplicadaException;
+import com.proyecto.servicios.exception.ReglaNegocioException;
+import com.proyecto.servicios.exception.RfcDuplicadoException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -14,7 +20,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-// Manejador global de excepciones para respuestas claras y estandarizadas
+// Manejador global de excepciones para estructurar respuestas HTTP estandarizadas
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -30,35 +36,75 @@ public class GlobalExceptionHandler {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("timestamp", LocalDateTime.now());
         body.put("codigo", HttpStatus.BAD_REQUEST.value());
-        body.put("error", "Error de validacion en los datos de entrada");
+        body.put("error", "Error de validacion");
         body.put("detalle", errores);
 
-        log.warn("Error de validacion en peticion: {}", errores);
+        log.warn("Error de validacion en datos de entrada: {}", errores);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
     }
 
-    // Manejo de excepciones de negocio ResponseStatusException
-    @ExceptionHandler(ResponseStatusException.class)
-    public ResponseEntity<Map<String, Object>> handleResponseStatusException(ResponseStatusException ex) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("timestamp", LocalDateTime.now());
-        body.put("codigo", ex.getStatusCode().value());
-        body.put("error", ex.getReason());
-
-        log.warn("Excepcion de negocio ({}): {}", ex.getStatusCode(), ex.getReason());
-        return ResponseEntity.status(ex.getStatusCode()).body(body);
+    // Excepcion personalizada: CURP duplicada
+    @ExceptionHandler(CurpDuplicadaException.class)
+    public ResponseEntity<Map<String, Object>> handleCurpDuplicadaException(CurpDuplicadaException ex) {
+        return buildErrorResponse(HttpStatus.CONFLICT, "CURP duplicada", ex.getMessage());
     }
 
-    // Manejo de cualquier error no controlado
+    // Excepcion personalizada: RFC duplicado
+    @ExceptionHandler(RfcDuplicadoException.class)
+    public ResponseEntity<Map<String, Object>> handleRfcDuplicadoException(RfcDuplicadoException ex) {
+        return buildErrorResponse(HttpStatus.CONFLICT, "RFC duplicado", ex.getMessage());
+    }
+
+    // Excepcion personalizada: Cliente ya registrado
+    @ExceptionHandler(ClienteYaRegistradoException.class)
+    public ResponseEntity<Map<String, Object>> handleClienteYaRegistradoException(ClienteYaRegistradoException ex) {
+        return buildErrorResponse(HttpStatus.CONFLICT, "Cliente ya registrado", ex.getMessage());
+    }
+
+    // Excepcion personalizada: Cliente no encontrado
+    @ExceptionHandler(ClienteNoEncontradoException.class)
+    public ResponseEntity<Map<String, Object>> handleClienteNoEncontradoException(ClienteNoEncontradoException ex) {
+        return buildErrorResponse(HttpStatus.NOT_FOUND, "Cliente no encontrado", ex.getMessage());
+    }
+
+    // Excepcion personalizada: Cuenta no encontrada
+    @ExceptionHandler(CuentaNoEncontradaException.class)
+    public ResponseEntity<Map<String, Object>> handleCuentaNoEncontradaException(CuentaNoEncontradaException ex) {
+        return buildErrorResponse(HttpStatus.NOT_FOUND, "Cuenta no encontrada", ex.getMessage());
+    }
+
+    // Excepcion personalizada: Error de Regla de Negocio
+    @ExceptionHandler(ReglaNegocioException.class)
+    public ResponseEntity<Map<String, Object>> handleReglaNegocioException(ReglaNegocioException ex) {
+        return buildErrorResponse(HttpStatus.BAD_REQUEST, "Regla de negocio no satisfecha", ex.getMessage());
+    }
+
+    // Excepciones ResponseStatusException
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<Map<String, Object>> handleResponseStatusException(ResponseStatusException ex) {
+        return buildErrorResponse(HttpStatus.valueOf(ex.getStatusCode().value()), "Error en la peticion", ex.getReason());
+    }
+
+    // Excepciones no controladas
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneralException(Exception ex) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("timestamp", LocalDateTime.now());
         body.put("codigo", HttpStatus.INTERNAL_SERVER_ERROR.value());
-        body.put("error", "Ha ocurrido un error interno en el servidor");
+        body.put("error", "Error interno en el servidor");
         body.put("mensaje", ex.getMessage());
 
-        log.error("Error no controlado en la aplicacion: ", ex);
+        log.error("Excepcion no controlada: ", ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+    }
+
+    private ResponseEntity<Map<String, Object>> buildErrorResponse(HttpStatus status, String titulo, String mensaje) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("codigo", status.value());
+        body.put("error", titulo);
+        body.put("mensaje", mensaje);
+        log.warn("{}: {}", titulo, mensaje);
+        return ResponseEntity.status(status).body(body);
     }
 }

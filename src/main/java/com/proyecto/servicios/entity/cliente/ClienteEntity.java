@@ -8,6 +8,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.OneToMany;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
@@ -23,7 +24,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-// Entidad JPA mapeada a la tabla clientes en PostgreSQL
+// Entidad JPA para la tabla clientes
 @Entity
 @Table(name = "clientes")
 @Getter
@@ -72,36 +73,11 @@ public class ClienteEntity {
     @Column(name = "correo_electronico", nullable = false, unique = true, length = 100)
     private String correoElectronico;
 
-    @Column(name = "telefono_movil", nullable = false, length = 15)
+    @Column(name = "telefono_movil", nullable = false, length = 10)
     private String telefonoMovil;
 
     @Column(name = "telefono_alternativo", length = 15)
     private String telefonoAlternativo;
-
-    // Domicilio
-    @Column(name = "calle", nullable = false, length = 100)
-    private String calle;
-
-    @Column(name = "numero_exterior", nullable = false, length = 20)
-    private String numeroExterior;
-
-    @Column(name = "numero_interior", length = 20)
-    private String numeroInterior;
-
-    @Column(name = "colonia", nullable = false, length = 100)
-    private String colonia;
-
-    @Column(name = "municipio", nullable = false, length = 100)
-    private String municipio;
-
-    @Column(name = "estado", nullable = false, length = 50)
-    private String estado;
-
-    @Column(name = "codigo_postal", nullable = false, length = 5)
-    private String codigoPostal;
-
-    @Column(name = "pais", nullable = false, length = 50)
-    private String pais;
 
     // Informacion Laboral
     @Column(name = "ocupacion", nullable = false, length = 100)
@@ -113,7 +89,7 @@ public class ClienteEntity {
     @Column(name = "ingreso_mensual", nullable = false, precision = 12, scale = 2)
     private BigDecimal ingresoMensual;
 
-    // Auditoria
+    // Auditoria y Baja Logica
     @Column(name = "fecha_creacion", nullable = false, updatable = false)
     private LocalDateTime fechaCreacion;
 
@@ -124,10 +100,14 @@ public class ClienteEntity {
     @Builder.Default
     private Boolean activo = true;
 
-    // Cuentas asociadas
+    // Relacion Uno a Uno con DomicilioEntity
+    @OneToOne(mappedBy = "cliente", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private DomicilioEntity domicilio;
+
+    // Relacion Uno a Muchos con CuentaEntity
     @OneToMany(mappedBy = "cliente", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @Builder.Default
-    private List<CuentaBancariaEntity> cuentas = new ArrayList<>();
+    private List<CuentaEntity> cuentas = new ArrayList<>();
 
     @PrePersist
     public void prePersist() {
