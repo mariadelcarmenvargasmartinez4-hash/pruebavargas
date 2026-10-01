@@ -1,4 +1,4 @@
--- Creacion de tablas para clientes, domicilios y cuentas bancarias en PostgreSQL
+-- Creacion de tablas para clientes, domicilios, cuentas bancarias y usuarios de acceso en PostgreSQL
 CREATE TABLE IF NOT EXISTS clientes (
     id                      BIGSERIAL PRIMARY KEY,
     nombre                  VARCHAR(50)     NOT NULL,
@@ -52,6 +52,17 @@ CREATE TABLE IF NOT EXISTS cuentas (
     CONSTRAINT fk_cuentas_cliente FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS usuarios_acceso (
+    id                      BIGSERIAL PRIMARY KEY,
+    cliente_id              BIGINT          NOT NULL UNIQUE,
+    username                VARCHAR(100)    NOT NULL UNIQUE,
+    password_hash           VARCHAR(120)    NOT NULL,
+    activo                  BOOLEAN         NOT NULL DEFAULT TRUE,
+    fecha_creacion          TIMESTAMP       NOT NULL DEFAULT NOW(),
+    fecha_actualizacion     TIMESTAMP       NOT NULL DEFAULT NOW(),
+    CONSTRAINT fk_usuario_cliente FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_clientes_curp ON clientes(curp);
 CREATE INDEX IF NOT EXISTS idx_clientes_rfc ON clientes(rfc);
 CREATE INDEX IF NOT EXISTS idx_clientes_correo ON clientes(correo_electronico);
@@ -63,3 +74,5 @@ CREATE INDEX IF NOT EXISTS idx_domicilios_cliente ON domicilios(cliente_id);
 CREATE INDEX IF NOT EXISTS idx_cuentas_numero ON cuentas(numero_cuenta);
 CREATE INDEX IF NOT EXISTS idx_cuentas_cliente_id ON cuentas(cliente_id);
 CREATE INDEX IF NOT EXISTS idx_cuentas_estatus ON cuentas(estatus);
+CREATE INDEX IF NOT EXISTS idx_usuarios_username ON usuarios_acceso(username);
+CREATE INDEX IF NOT EXISTS idx_usuarios_cliente_id ON usuarios_acceso(cliente_id);

@@ -13,6 +13,7 @@ import com.proyecto.servicios.model.cliente.ClienteRegistroResponseDto;
 import com.proyecto.servicios.repositorys.cliente.ClienteRepository;
 import com.proyecto.servicios.repositorys.cliente.CuentaRepository;
 import com.proyecto.servicios.repositorys.cliente.DomicilioRepository;
+import com.proyecto.servicios.repositorys.cliente.UsuarioAccesoRepository;
 import com.proyecto.servicios.service.Impl.ClienteServiceImpl;
 import com.proyecto.servicios.util.GeneradorCuentaBancariaUtil;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,6 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import org.mockito.ArgumentCaptor;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
@@ -51,7 +53,13 @@ public class ClienteServiceImplTest {
     private CuentaRepository cuentaRepository;
 
     @Mock
+    private UsuarioAccesoRepository usuarioAccesoRepository;
+
+    @Mock
     private GeneradorCuentaBancariaUtil generadorCuentaUtil;
+
+    @Mock
+    private org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
 
     @InjectMocks
     private ClienteServiceImpl clienteService;
@@ -60,6 +68,7 @@ public class ClienteServiceImplTest {
     private ClienteEntity clienteMock;
     private DomicilioEntity domicilioMock;
     private CuentaEntity cuentaMock;
+    private com.proyecto.servicios.entity.cliente.UsuarioAccesoEntity usuarioMock;
 
     @BeforeEach
     void setUp() {
@@ -136,20 +145,32 @@ public class ClienteServiceImplTest {
                 .moneda("MXN")
                 .estatus("ACTIVA")
                 .build();
+
+        usuarioMock = com.proyecto.servicios.entity.cliente.UsuarioAccesoEntity.builder()
+                .id(1L)
+                .cliente(clienteMock)
+                .username("juan.perez@example.com")
+                .passwordHash("$2a$10$hashedpassword")
+                .activo(true)
+                .fechaCreacion(LocalDateTime.now())
+                .build();
     }
 
-    // Valida registro exitoso en clientes, domicilios y cuentas
+    // Valida registro exitoso en clientes, domicilios, cuentas y usuario de acceso
     @Test
     void testRegistrarCliente_Exitoso() {
+        requestValido.setPassword("Segura123#");
         when(clienteRepository.existsByCurp(anyString())).thenReturn(false);
         when(clienteRepository.existsByRfc(anyString())).thenReturn(false);
         when(clienteRepository.existsByCorreoElectronico(anyString())).thenReturn(false);
         when(cuentaRepository.existsByNumeroCuenta(anyString())).thenReturn(false);
         when(generadorCuentaUtil.generarNumeroCuenta()).thenReturn("4815162342");
         when(generadorCuentaUtil.generarClabe("4815162342")).thenReturn("012180004815162342");
+        when(passwordEncoder.encode(anyString())).thenReturn("$2a$10$hashedpassword");
         when(clienteRepository.save(any(ClienteEntity.class))).thenReturn(clienteMock);
         when(domicilioRepository.save(any(DomicilioEntity.class))).thenReturn(domicilioMock);
         when(cuentaRepository.save(any(CuentaEntity.class))).thenReturn(cuentaMock);
+        when(usuarioAccesoRepository.save(any(com.proyecto.servicios.entity.cliente.UsuarioAccesoEntity.class))).thenReturn(usuarioMock);
 
         ClienteRegistroResponseDto respuesta = clienteService.registrarCliente(requestValido);
 
@@ -162,10 +183,16 @@ public class ClienteServiceImplTest {
         assertNotNull(respuesta.getCuentaBancaria());
         assertEquals("4815162342", respuesta.getCuentaBancaria().getNumeroCuenta());
         assertEquals("ACTIVA", respuesta.getCuentaBancaria().getEstatus());
+        assertNotNull(respuesta.getUsuarioAcceso());
+        assertEquals("juan.perez@example.com", respuesta.getUsuarioAcceso().getUsername());
+        assertEquals(true, respuesta.getUsuarioAcceso().getActivo());
 
         verify(clienteRepository).save(any(ClienteEntity.class));
         verify(domicilioRepository).save(any(DomicilioEntity.class));
-        verify(cuentaRepository).save(any(CuentaEntity.class));
+        ArgumentCaptor<CuentaEntity> cuentaCaptor = ArgumentCaptor.forClass(CuentaEntity.class);
+        verify(cuentaRepository).save(cuentaCaptor.capture());
+        assertEquals(new BigDecimal("500.00"), cuentaCaptor.getValue().getSaldo());
+        verify(usuarioAccesoRepository).save(any(com.proyecto.servicios.entity.cliente.UsuarioAccesoEntity.class));
     }
 
     // Valida rechazo si el cliente es menor de 18 anos

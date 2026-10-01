@@ -91,6 +91,9 @@ public class ClienteRegistroResponseDto {
     @Schema(description = "Todas las cuentas asociadas al cliente")
     private List<CuentaBancariaDto> cuentas;
 
+    @Schema(description = "Usuario de acceso al sistema creado para el cliente")
+    private UsuarioAccesoDto usuarioAcceso;
+
     @Schema(description = "Fecha y hora del registro")
     private LocalDateTime fechaRegistro;
 

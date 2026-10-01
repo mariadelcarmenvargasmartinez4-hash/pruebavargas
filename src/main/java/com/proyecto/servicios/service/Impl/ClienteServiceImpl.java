@@ -3,6 +3,7 @@ package com.proyecto.servicios.service.Impl;
 import com.proyecto.servicios.entity.cliente.ClienteEntity;
 import com.proyecto.servicios.entity.cliente.CuentaEntity;
 import com.proyecto.servicios.entity.cliente.DomicilioEntity;
+import com.proyecto.servicios.entity.cliente.UsuarioAccesoEntity;
 import com.proyecto.servicios.exception.ClienteNoEncontradoException;
 import com.proyecto.servicios.exception.ClienteYaRegistradoException;
 import com.proyecto.servicios.exception.CuentaNoEncontradaException;
@@ -14,9 +15,11 @@ import com.proyecto.servicios.model.cliente.ClienteRegistroRequestDto;
 import com.proyecto.servicios.model.cliente.ClienteRegistroResponseDto;
 import com.proyecto.servicios.model.cliente.CuentaBancariaDto;
 import com.proyecto.servicios.model.cliente.DomicilioDto;
+import com.proyecto.servicios.model.cliente.UsuarioAccesoDto;
 import com.proyecto.servicios.repositorys.cliente.ClienteRepository;
 import com.proyecto.servicios.repositorys.cliente.CuentaRepository;
 import com.proyecto.servicios.repositorys.cliente.DomicilioRepository;
+import com.proyecto.servicios.repositorys.cliente.UsuarioAccesoRepository;
 import com.proyecto.servicios.service.ClienteService;
 import com.proyecto.servicios.util.GeneradorCuentaBancariaUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -39,7 +42,9 @@ public class ClienteServiceImpl implements ClienteService {
     private final ClienteRepository clienteRepository;
     private final DomicilioRepository domicilioRepository;
     private final CuentaRepository cuentaRepository;
+    private final UsuarioAccesoRepository usuarioAccesoRepository;
     private final GeneradorCuentaBancariaUtil generadorCuentaUtil;
+    private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
 
     @Value("${banco.cuenta.saldo-inicial-default:500.00}")
     private BigDecimal saldoInicialPorDefecto;
@@ -48,11 +53,15 @@ public class ClienteServiceImpl implements ClienteService {
     public ClienteServiceImpl(ClienteRepository clienteRepository,
                               DomicilioRepository domicilioRepository,
                               CuentaRepository cuentaRepository,
-                              GeneradorCuentaBancariaUtil generadorCuentaUtil) {
+                              UsuarioAccesoRepository usuarioAccesoRepository,
+                              GeneradorCuentaBancariaUtil generadorCuentaUtil,
+                              org.springframework.security.crypto.password.PasswordEncoder passwordEncoder) {
         this.clienteRepository = clienteRepository;
         this.domicilioRepository = domicilioRepository;
         this.cuentaRepository = cuentaRepository;
+        this.usuarioAccesoRepository = usuarioAccesoRepository;
         this.generadorCuentaUtil = generadorCuentaUtil;
+        this.passwordEncoder = passwordEncoder;
     }
 
     // Registra un nuevo cliente persona fisica, su domicilio y crea automaticamente su cuenta bancaria
@@ -95,9 +104,9 @@ public class ClienteServiceImpl implements ClienteService {
             throw new ReglaNegocioException("El saldo inicial no puede ser negativo");
         }
 
-        BigDecimal saldoInicial = (dto.getSaldoInicial() != null)
-                ? dto.getSaldoInicial()
-                : (saldoInicialPorDefecto != null ? saldoInicialPorDefecto : new BigDecimal("500.00"));
+        BigDecimal saldoInicial = saldoInicialPorDefecto != null
+            ? saldoInicialPorDefecto
+            : new BigDecimal("500.00");
 
         // 7. Persistencia de la entidad ClienteEntity (Tabla clientes)
         ClienteEntity cliente = ClienteEntity.builder()
@@ -155,9 +164,24 @@ public class ClienteServiceImpl implements ClienteService {
 
         CuentaEntity cuentaGuardada = cuentaRepository.save(cuenta);
 
+        // 10. Creacion automatica de Usuario de Acceso (correo como username, password cifrado con BCrypt)
+        String passwordCifrada = passwordEncoder.encode(dto.getPassword());
+
+        UsuarioAccesoEntity usuarioAcceso = UsuarioAccesoEntity.builder()
+                .cliente(clienteGuardado)
+                .username(correo)
+                .passwordHash(passwordCifrada)
+                .rol("CLIENTE")
+                .activo(true)
+                .build();
+
+        UsuarioAccesoEntity usuarioGuardado = usuarioAccesoRepository.save(usuarioAcceso);
+        clienteGuardado.setUsuarioAcceso(usuarioGuardado);
+
+        log.info("Usuario de acceso creado exitosamente para el cliente ID: {}, username: {}", clienteGuardado.getId(), usuarioGuardado.getUsername());
         log.info("Cliente registrado exitosamente. ID: {}, cuenta bancaria: {}, saldo inicial: {}", clienteGuardado.getId(), cuentaGuardada.getNumeroCuenta(), cuentaGuardada.getSaldo());
 
-        return mapearARespuestaDto(clienteGuardado, domicilioGuardado, List.of(cuentaGuardada), cuentaGuardada);
+        return mapearARespuestaDto(clienteGuardado, domicilioGuardado, List.of(cuentaGuardada), cuentaGuardada, usuarioGuardado);
     }
 
     // Consulta todos los clientes registrados
@@ -351,17 +375,22 @@ public class ClienteServiceImpl implements ClienteService {
         clienteRepository.save(cliente);
 
         // Regla de negocio: Solo los clientes activos podrán tener cuentas activas.
-        // Al desactivar el cliente, se desactivan o cancelan sus cuentas.
+        // Al desactivar el cliente, se desactivan o cancelan sus cuentas y su usuario de acceso.
         List<CuentaEntity> cuentas = cuentaRepository.findByClienteId(cliente.getId());
         for (CuentaEntity cuenta : cuentas) {
             cuenta.setEstatus("INACTIVA");
             cuentaRepository.save(cuenta);
         }
 
-        log.info("Cliente con ID {} y sus cuentas asociadas han sido desactivados exitosamente (baja logica)", id);
+        usuarioAccesoRepository.findByClienteId(cliente.getId()).ifPresent(usuario -> {
+            usuario.setActivo(false);
+            usuarioAccesoRepository.save(usuario);
+        });
+
+        log.info("Cliente con ID {}, sus cuentas y usuario de acceso han sido desactivados exitosamente (baja logica)", id);
     }
 
-    // Reactiva un cliente y sus cuentas
+    // Reactiva un cliente, sus cuentas y su usuario
     @Override
     @Transactional(transactionManager = "sfTransactionManager")
     public ClienteRegistroResponseDto reactivarCliente(Long id) {
@@ -373,15 +402,21 @@ public class ClienteServiceImpl implements ClienteService {
         cliente.setActivo(true);
         clienteRepository.save(cliente);
 
+        usuarioAccesoRepository.findByClienteId(cliente.getId()).ifPresent(usuario -> {
+            usuario.setActivo(true);
+            usuarioAccesoRepository.save(usuario);
+        });
+
         return construirRespuestaCompleta(cliente);
     }
 
-    // Construye la respuesta completa DTO con cliente, domicilio y cuentas
+    // Construye la respuesta completa DTO con cliente, domicilio, cuentas y usuario de acceso
     private ClienteRegistroResponseDto construirRespuestaCompleta(ClienteEntity cliente) {
         DomicilioEntity domicilio = domicilioRepository.findByClienteId(cliente.getId()).orElse(null);
         List<CuentaEntity> cuentas = cuentaRepository.findByClienteId(cliente.getId());
         CuentaEntity cuentaPrincipal = cuentas.isEmpty() ? null : cuentas.get(0);
-        return mapearARespuestaDto(cliente, domicilio, cuentas, cuentaPrincipal);
+        UsuarioAccesoEntity usuario = usuarioAccesoRepository.findByClienteId(cliente.getId()).orElse(null);
+        return mapearARespuestaDto(cliente, domicilio, cuentas, cuentaPrincipal, usuario);
     }
 
     // Valida mayoria de edad (18 anos o mas)
@@ -417,7 +452,8 @@ public class ClienteServiceImpl implements ClienteService {
     private ClienteRegistroResponseDto mapearARespuestaDto(ClienteEntity cliente,
                                                           DomicilioEntity domicilio,
                                                           List<CuentaEntity> cuentas,
-                                                          CuentaEntity cuentaPrincipal) {
+                                                          CuentaEntity cuentaPrincipal,
+                                                          UsuarioAccesoEntity usuarioAcceso) {
         StringBuilder nombreCompleto = new StringBuilder(cliente.getNombre());
         if (cliente.getSegundoNombre() != null && !cliente.getSegundoNombre().isBlank()) {
             nombreCompleto.append(" ").append(cliente.getSegundoNombre());
@@ -449,6 +485,16 @@ public class ClienteServiceImpl implements ClienteService {
                 ? cuentas.stream().map(this::mapearCuentaADto).collect(Collectors.toList())
                 : List.of();
 
+        UsuarioAccesoDto usuarioDto = null;
+        if (usuarioAcceso != null) {
+            usuarioDto = UsuarioAccesoDto.builder()
+                    .idUsuario(usuarioAcceso.getId())
+                    .username(usuarioAcceso.getUsername())
+                    .activo(usuarioAcceso.getActivo())
+                    .fechaCreacion(usuarioAcceso.getFechaCreacion())
+                    .build();
+        }
+
         return ClienteRegistroResponseDto.builder()
                 .codigo(0)
                 .mensaje("Operacion realizada con exito")
@@ -474,6 +520,7 @@ public class ClienteServiceImpl implements ClienteService {
                 .domicilio(domDto)
                 .cuentaBancaria(cuentaPrincipalDto)
                 .cuentas(cuentasDto)
+                .usuarioAcceso(usuarioDto)
                 .fechaRegistro(cliente.getFechaCreacion())
                 .fechaActualizacion(cliente.getFechaActualizacion())
                 .build();

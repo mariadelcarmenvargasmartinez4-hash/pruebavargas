@@ -104,6 +104,10 @@ public class ClienteEntity {
     @OneToOne(mappedBy = "cliente", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private DomicilioEntity domicilio;
 
+    // Relacion Uno a Uno con UsuarioAccesoEntity (un unico usuario por cliente)
+    @OneToOne(mappedBy = "cliente", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private UsuarioAccesoEntity usuarioAcceso;
+
     // Relacion Uno a Muchos con CuentaEntity
     @OneToMany(mappedBy = "cliente", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     @Builder.Default

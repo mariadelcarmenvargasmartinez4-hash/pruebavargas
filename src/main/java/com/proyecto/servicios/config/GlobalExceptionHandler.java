@@ -2,10 +2,15 @@ package com.proyecto.servicios.config;
 
 import com.proyecto.servicios.exception.ClienteNoEncontradoException;
 import com.proyecto.servicios.exception.ClienteYaRegistradoException;
+import com.proyecto.servicios.exception.CorreoDuplicadoException;
+import com.proyecto.servicios.exception.CredencialesInvalidasException;
 import com.proyecto.servicios.exception.CuentaNoEncontradaException;
 import com.proyecto.servicios.exception.CurpDuplicadaException;
+import com.proyecto.servicios.exception.PasswordInvalidaException;
 import com.proyecto.servicios.exception.ReglaNegocioException;
 import com.proyecto.servicios.exception.RfcDuplicadoException;
+import com.proyecto.servicios.exception.UsuarioInactivoException;
+import com.proyecto.servicios.exception.UsuarioNoEncontradoException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -77,6 +82,31 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ReglaNegocioException.class)
     public ResponseEntity<Map<String, Object>> handleReglaNegocioException(ReglaNegocioException ex) {
         return buildErrorResponse(HttpStatus.BAD_REQUEST, "Regla de negocio no satisfecha", ex.getMessage());
+    }
+
+    @ExceptionHandler(CredencialesInvalidasException.class)
+    public ResponseEntity<Map<String, Object>> handleCredencialesInvalidas(CredencialesInvalidasException ex) {
+        return buildErrorResponse(HttpStatus.UNAUTHORIZED, "Credenciales invalidas", ex.getMessage());
+    }
+
+    @ExceptionHandler(UsuarioInactivoException.class)
+    public ResponseEntity<Map<String, Object>> handleUsuarioInactivo(UsuarioInactivoException ex) {
+        return buildErrorResponse(HttpStatus.FORBIDDEN, "Usuario inactivo", ex.getMessage());
+    }
+
+    @ExceptionHandler(UsuarioNoEncontradoException.class)
+    public ResponseEntity<Map<String, Object>> handleUsuarioNoEncontrado(UsuarioNoEncontradoException ex) {
+        return buildErrorResponse(HttpStatus.NOT_FOUND, "Usuario no encontrado", ex.getMessage());
+    }
+
+    @ExceptionHandler(CorreoDuplicadoException.class)
+    public ResponseEntity<Map<String, Object>> handleCorreoDuplicado(CorreoDuplicadoException ex) {
+        return buildErrorResponse(HttpStatus.CONFLICT, "Correo electronico duplicado", ex.getMessage());
+    }
+
+    @ExceptionHandler(PasswordInvalidaException.class)
+    public ResponseEntity<Map<String, Object>> handlePasswordInvalida(PasswordInvalidaException ex) {
+        return buildErrorResponse(HttpStatus.BAD_REQUEST, "Contrasena invalida", ex.getMessage());
     }
 
     // Excepciones ResponseStatusException

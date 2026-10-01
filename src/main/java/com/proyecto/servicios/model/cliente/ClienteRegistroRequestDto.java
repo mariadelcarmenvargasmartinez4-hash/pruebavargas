@@ -155,11 +155,17 @@ public class ClienteRegistroRequestDto {
     private BigDecimal ingresoMensual;
 
     // Saldo Inicial de la cuenta bancaria
-    @NotNull(message = "El saldo inicial de apertura es obligatorio")
     @DecimalMin(value = "0.00", message = "El saldo inicial no puede ser negativo")
-    @Schema(description = "Saldo inicial asignado a la nueva cuenta bancaria", example = "1000.00")
+    @Schema(description = "Campo opcional legado; el sistema define el saldo inicial de la cuenta", example = "1000.00")
     private BigDecimal saldoInicial;
 
     @Schema(description = "Tipo de cuenta (opcional, default DEBITO)", example = "DEBITO")
     private String tipoCuenta;
+
+    // Contraseña para creacion del usuario de acceso
+    @NotBlank(message = "La contrasena para el usuario de acceso es obligatoria")
+    @Size(min = 8, max = 50, message = "La contrasena debe tener entre 8 y 50 caracteres")
+    @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z\\d]).{8,50}$", message = "La contrasena debe contener mayuscula, minuscula, numero y caracter especial")
+    @Schema(description = "Contraseña de acceso para el usuario del cliente (se almacenará con BCrypt)", example = "Segura123#")
+    private String password;
 }
