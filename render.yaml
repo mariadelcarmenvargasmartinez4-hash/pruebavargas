@@ -1,7 +1,6 @@
 databases:
   - name: db-prueba
     databaseName: db_prueba
-    user: postgres
     plan: free
     region: oregon
 
@@ -19,6 +18,10 @@ services:
         fromDatabase:
           name: db-prueba
           property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: db-prueba
+          property: port
       - key: DB_NAME
         fromDatabase:
           name: db-prueba
@@ -31,9 +34,5 @@ services:
         fromDatabase:
           name: db-prueba
           property: password
-      - key: SPRING_DATASOURCE_URL
-        fromDatabase:
-          name: db-prueba
-          property: connectionString
       - key: JWT_SECRET
         generateValue: true
