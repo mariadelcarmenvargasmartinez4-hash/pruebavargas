@@ -226,6 +226,19 @@ public class ClienteServiceImplTest {
         assertEquals("El cliente debe ser mayor de edad (18 años o más)", excepcion.getMessage());
     }
 
+    // Valida que no se permita registrar clientes mayores a 100 anos
+    @Test
+    void testRegistrarCliente_MayorDe100Anos_LanzaExcepcion() {
+        requestValido.setFechaNacimiento(LocalDate.now().minusYears(101));
+
+        ReglaNegocioException excepcion = assertThrows(
+                ReglaNegocioException.class,
+                () -> clienteService.registrarCliente(requestValido)
+        );
+
+        assertEquals("La fecha de nacimiento no debe exceder los 100 años", excepcion.getMessage());
+    }
+
     // Valida error de negocio si el sexo no existe en catálogo
     @Test
     void testRegistrarCliente_SexoInvalido_LanzaExcepcion() {

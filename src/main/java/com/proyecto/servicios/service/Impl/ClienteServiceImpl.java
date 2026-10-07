@@ -376,6 +376,9 @@ public class ClienteServiceImpl implements ClienteService {
         if (edad < 18) {
             throw new ReglaNegocioException("El cliente debe ser mayor de edad (18 años o más)");
         }
+        if (edad > 100) {
+            throw new ReglaNegocioException("La fecha de nacimiento no debe exceder los 100 años");
+        }
     }
 
     private void validarCatalogos(String sexo, String nacionalidad, String estadoCivil) {

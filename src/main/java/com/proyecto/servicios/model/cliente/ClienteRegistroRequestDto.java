@@ -1,12 +1,15 @@
 package com.proyecto.servicios.model.cliente;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.proyecto.servicios.validation.ValidFechaNacimiento;
+import com.proyecto.servicios.validation.ValidTextoNombre;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Past;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
@@ -17,7 +20,7 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
-// DTO de peticion para el registro de cliente persona fisica, su domicilio y asignacion de cuenta bancaria
+// DTO de petición para el registro de cliente persona física, su domicilio y asignación de cuenta bancaria
 @Data
 @Builder
 @NoArgsConstructor
@@ -25,32 +28,25 @@ import java.time.LocalDate;
 @Schema(description = "Datos para el registro de cliente persona física, su domicilio y asignación de cuenta bancaria")
 public class ClienteRegistroRequestDto {
 
-    // Datos Personales
-    @NotBlank(message = "El nombre es obligatorio y no debe estar vacío")
-    @Size(min = 2, max = 50, message = "El nombre debe tener entre 2 y 50 caracteres")
-    @Pattern(regexp = "^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+( [a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+)*$", message = "El nombre no debe iniciar ni terminar con espacios ni contener espacios consecutivos, solo letras")
+    // Datos Personales con validación granular de nombres y apellidos
+    @ValidTextoNombre(tipo = "nombre", obligatorio = true)
     @Schema(description = "Primer nombre", example = "Juan")
     private String nombre;
 
-    @Size(max = 50, message = "El segundo nombre no puede exceder 50 caracteres")
-    @Pattern(regexp = "^$|^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+( [a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+)*$", message = "El segundo nombre no debe iniciar ni terminar con espacios ni contener espacios consecutivos, solo letras")
+    @ValidTextoNombre(tipo = "segundoNombre", obligatorio = false)
     @Schema(description = "Segundo nombre (opcional)", example = "Carlos")
     private String segundoNombre;
 
-    @NotBlank(message = "El apellido paterno es obligatorio y no debe estar vacío")
-    @Size(min = 2, max = 50, message = "El apellido paterno debe tener entre 2 y 50 caracteres")
-    @Pattern(regexp = "^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+( [a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+)*$", message = "El apellido paterno no debe iniciar ni terminar con espacios ni contener espacios consecutivos, solo letras")
+    @ValidTextoNombre(tipo = "apellidoPaterno", obligatorio = true)
     @Schema(description = "Apellido paterno", example = "Perez")
     private String apellidoPaterno;
 
-    @NotBlank(message = "El apellido materno es obligatorio y no debe estar vacío")
-    @Size(min = 2, max = 50, message = "El apellido materno debe tener entre 2 y 50 caracteres")
-    @Pattern(regexp = "^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+( [a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+)*$", message = "El apellido materno no debe iniciar ni terminar con espacios ni contener espacios consecutivos, solo letras")
+    @ValidTextoNombre(tipo = "apellidoMaterno", obligatorio = true)
     @Schema(description = "Apellido materno", example = "Lopez")
     private String apellidoMaterno;
 
     @NotNull(message = "La fecha de nacimiento es obligatoria")
-    @Past(message = "La fecha de nacimiento no puede ser una fecha futura")
+    @ValidFechaNacimiento
     @JsonFormat(pattern = "yyyy-MM-dd")
     @Schema(description = "Fecha de nacimiento (AAAA-MM-DD)", example = "1990-05-15")
     private LocalDate fechaNacimiento;
@@ -149,13 +145,18 @@ public class ClienteRegistroRequestDto {
     @Schema(description = "Nombre de la empresa o empleador", example = "Tech Solutions SA")
     private String empresa;
 
+    // Control estricto de límites numéricos decimales (evita desbordamientos en base de datos)
     @NotNull(message = "El ingreso mensual es obligatorio")
     @DecimalMin(value = "0.01", inclusive = true, message = "El ingreso mensual debe ser mayor a cero")
+    @DecimalMax(value = "9999999999.99", message = "El ingreso mensual excede el límite máximo permitido")
+    @Digits(integer = 10, fraction = 2, message = "El campo 'ingresoMensual' debe ser un valor numerico decimal valido")
     @Schema(description = "Ingreso mensual comprobable (mayor a cero)", example = "35000.00")
     private BigDecimal ingresoMensual;
 
     // Saldo Inicial de la cuenta bancaria
     @DecimalMin(value = "0.00", message = "El saldo inicial no puede ser negativo")
+    @DecimalMax(value = "999999999999.99", message = "El saldo inicial excede el límite máximo permitido")
+    @Digits(integer = 12, fraction = 2, message = "El campo 'saldoInicial' debe ser un valor numerico decimal valido")
     @Schema(description = "Campo opcional; el sistema define el saldo inicial de la cuenta", example = "1000.00")
     private BigDecimal saldoInicial;
 

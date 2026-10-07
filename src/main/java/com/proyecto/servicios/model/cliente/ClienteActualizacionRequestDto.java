@@ -1,10 +1,13 @@
 package com.proyecto.servicios.model.cliente;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.proyecto.servicios.validation.ValidFechaNacimiento;
+import com.proyecto.servicios.validation.ValidTextoNombre;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.Past;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
@@ -24,27 +27,23 @@ import java.time.LocalDate;
 public class ClienteActualizacionRequestDto {
 
     // Datos Personales
-    @Size(min = 2, max = 50, message = "El nombre debe tener entre 2 y 50 caracteres")
-    @Pattern(regexp = "^$|^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+( [a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+)*$", message = "El nombre no debe iniciar ni terminar con espacios ni contener espacios consecutivos, solo letras")
+    @ValidTextoNombre(tipo = "nombre", obligatorio = false)
     @Schema(description = "Primer nombre", example = "Juan")
     private String nombre;
 
-    @Size(max = 50, message = "El segundo nombre no puede exceder 50 caracteres")
-    @Pattern(regexp = "^$|^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+( [a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+)*$", message = "El segundo nombre no debe iniciar ni terminar con espacios ni contener espacios consecutivos, solo letras")
+    @ValidTextoNombre(tipo = "segundoNombre", obligatorio = false)
     @Schema(description = "Segundo nombre (opcional)", example = "Carlos")
     private String segundoNombre;
 
-    @Size(min = 2, max = 50, message = "El apellido paterno debe tener entre 2 y 50 caracteres")
-    @Pattern(regexp = "^$|^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+( [a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+)*$", message = "El apellido paterno no debe iniciar ni terminar con espacios ni contener espacios consecutivos, solo letras")
+    @ValidTextoNombre(tipo = "apellidoPaterno", obligatorio = false)
     @Schema(description = "Apellido paterno", example = "Perez")
     private String apellidoPaterno;
 
-    @Size(min = 2, max = 50, message = "El apellido materno debe tener entre 2 y 50 caracteres")
-    @Pattern(regexp = "^$|^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+( [a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+)*$", message = "El apellido materno no debe iniciar ni terminar con espacios ni contener espacios consecutivos, solo letras")
+    @ValidTextoNombre(tipo = "apellidoMaterno", obligatorio = false)
     @Schema(description = "Apellido materno", example = "Lopez")
     private String apellidoMaterno;
 
-    @Past(message = "La fecha de nacimiento no puede ser una fecha futura")
+    @ValidFechaNacimiento
     @JsonFormat(pattern = "yyyy-MM-dd")
     @Schema(description = "Fecha de nacimiento (AAAA-MM-DD)", example = "1990-05-15")
     private LocalDate fechaNacimiento;
@@ -118,6 +117,8 @@ public class ClienteActualizacionRequestDto {
     private String empresa;
 
     @DecimalMin(value = "0.01", inclusive = true, message = "El ingreso mensual debe ser mayor a cero")
+    @DecimalMax(value = "9999999999.99", message = "El ingreso mensual excede el límite máximo permitido")
+    @Digits(integer = 10, fraction = 2, message = "El campo 'ingresoMensual' debe ser un valor numerico decimal valido")
     @Schema(description = "Ingreso mensual comprobable (mayor a cero)", example = "45000.00")
     private BigDecimal ingresoMensual;
 }
