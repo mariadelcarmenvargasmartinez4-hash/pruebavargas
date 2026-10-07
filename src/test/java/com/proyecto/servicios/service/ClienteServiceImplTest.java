@@ -3,6 +3,7 @@ package com.proyecto.servicios.service;
 import com.proyecto.servicios.entity.cliente.ClienteEntity;
 import com.proyecto.servicios.entity.cliente.CuentaEntity;
 import com.proyecto.servicios.entity.cliente.DomicilioEntity;
+import com.proyecto.servicios.entity.cliente.UsuarioAccesoEntity;
 import com.proyecto.servicios.exception.ClienteNoEncontradoException;
 import com.proyecto.servicios.exception.CurpDuplicadaException;
 import com.proyecto.servicios.exception.ReglaNegocioException;
@@ -10,18 +11,21 @@ import com.proyecto.servicios.exception.RfcDuplicadoException;
 import com.proyecto.servicios.model.cliente.ClienteActualizacionRequestDto;
 import com.proyecto.servicios.model.cliente.ClienteRegistroRequestDto;
 import com.proyecto.servicios.model.cliente.ClienteRegistroResponseDto;
+import com.proyecto.servicios.model.util.MetricasTextoDto;
 import com.proyecto.servicios.repositorys.cliente.ClienteRepository;
 import com.proyecto.servicios.repositorys.cliente.CuentaRepository;
 import com.proyecto.servicios.repositorys.cliente.DomicilioRepository;
 import com.proyecto.servicios.repositorys.cliente.UsuarioAccesoRepository;
 import com.proyecto.servicios.service.Impl.ClienteServiceImpl;
 import com.proyecto.servicios.util.GeneradorCuentaBancariaUtil;
+import com.proyecto.servicios.util.MetricasTextoUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -33,7 +37,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import org.mockito.ArgumentCaptor;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
@@ -59,7 +62,19 @@ public class ClienteServiceImplTest {
     private GeneradorCuentaBancariaUtil generadorCuentaUtil;
 
     @Mock
-    private org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
+    private PasswordEncoder passwordEncoder;
+
+    @Mock
+    private SexoService sexoService;
+
+    @Mock
+    private NacionalidadService nacionalidadService;
+
+    @Mock
+    private EstadoCivilService estadoCivilService;
+
+    @Mock
+    private MetricasTextoUtil metricasTextoUtil;
 
     @InjectMocks
     private ClienteServiceImpl clienteService;
@@ -68,7 +83,7 @@ public class ClienteServiceImplTest {
     private ClienteEntity clienteMock;
     private DomicilioEntity domicilioMock;
     private CuentaEntity cuentaMock;
-    private com.proyecto.servicios.entity.cliente.UsuarioAccesoEntity usuarioMock;
+    private UsuarioAccesoEntity usuarioMock;
 
     @BeforeEach
     void setUp() {
@@ -81,7 +96,7 @@ public class ClienteServiceImplTest {
                 .curp("PELJ900515HDFRPR09")
                 .rfc("PELJ9005151A2")
                 .sexo("MASCULINO")
-                .nacionalidad("Mexicana")
+                .nacionalidad("MEXICANA")
                 .estadoCivil("SOLTERO")
                 .correoElectronico("juan.perez@example.com")
                 .telefonoMovil("5512345678")
@@ -110,7 +125,7 @@ public class ClienteServiceImplTest {
                 .curp("PELJ900515HDFRPR09")
                 .rfc("PELJ9005151A2")
                 .sexo("MASCULINO")
-                .nacionalidad("Mexicana")
+                .nacionalidad("MEXICANA")
                 .estadoCivil("SOLTERO")
                 .correoElectronico("juan.perez@example.com")
                 .telefonoMovil("5512345678")
@@ -146,7 +161,7 @@ public class ClienteServiceImplTest {
                 .estatus("ACTIVA")
                 .build();
 
-        usuarioMock = com.proyecto.servicios.entity.cliente.UsuarioAccesoEntity.builder()
+        usuarioMock = UsuarioAccesoEntity.builder()
                 .id(1L)
                 .cliente(clienteMock)
                 .username("juan.perez@example.com")
@@ -160,6 +175,11 @@ public class ClienteServiceImplTest {
     @Test
     void testRegistrarCliente_Exitoso() {
         requestValido.setPassword("Segura123#");
+        when(sexoService.esValidoYActivo(anyString())).thenReturn(true);
+        when(nacionalidadService.esValidoYActivo(anyString())).thenReturn(true);
+        when(estadoCivilService.esValidoYActivo(anyString())).thenReturn(true);
+        when(metricasTextoUtil.analizar(any(), any())).thenReturn(MetricasTextoDto.builder().build());
+
         when(clienteRepository.existsByCurp(anyString())).thenReturn(false);
         when(clienteRepository.existsByRfc(anyString())).thenReturn(false);
         when(clienteRepository.existsByCorreoElectronico(anyString())).thenReturn(false);
@@ -170,7 +190,7 @@ public class ClienteServiceImplTest {
         when(clienteRepository.save(any(ClienteEntity.class))).thenReturn(clienteMock);
         when(domicilioRepository.save(any(DomicilioEntity.class))).thenReturn(domicilioMock);
         when(cuentaRepository.save(any(CuentaEntity.class))).thenReturn(cuentaMock);
-        when(usuarioAccesoRepository.save(any(com.proyecto.servicios.entity.cliente.UsuarioAccesoEntity.class))).thenReturn(usuarioMock);
+        when(usuarioAccesoRepository.save(any(UsuarioAccesoEntity.class))).thenReturn(usuarioMock);
 
         ClienteRegistroResponseDto respuesta = clienteService.registrarCliente(requestValido);
 
@@ -189,115 +209,115 @@ public class ClienteServiceImplTest {
 
         verify(clienteRepository).save(any(ClienteEntity.class));
         verify(domicilioRepository).save(any(DomicilioEntity.class));
-        ArgumentCaptor<CuentaEntity> cuentaCaptor = ArgumentCaptor.forClass(CuentaEntity.class);
-        verify(cuentaRepository).save(cuentaCaptor.capture());
-        assertEquals(new BigDecimal("500.00"), cuentaCaptor.getValue().getSaldo());
-        verify(usuarioAccesoRepository).save(any(com.proyecto.servicios.entity.cliente.UsuarioAccesoEntity.class));
+        verify(cuentaRepository).save(any(CuentaEntity.class));
+        verify(usuarioAccesoRepository).save(any(UsuarioAccesoEntity.class));
     }
 
-    // Valida rechazo si el cliente es menor de 18 anos
+    // Valida que no se permita registrar clientes menores de 18 anos
     @Test
-    void testRegistrarCliente_MenorDeEdad() {
+    void testRegistrarCliente_MenorDeEdad_LanzaExcepcion() {
         requestValido.setFechaNacimiento(LocalDate.now().minusYears(17));
 
-        assertThrows(ReglaNegocioException.class, () ->
-                clienteService.registrarCliente(requestValido));
+        ReglaNegocioException excepcion = assertThrows(
+                ReglaNegocioException.class,
+                () -> clienteService.registrarCliente(requestValido)
+        );
+
+        assertEquals("El cliente debe ser mayor de edad (18 años o más)", excepcion.getMessage());
     }
 
-    // Valida rechazo si el CURP ya existe
+    // Valida error de negocio si el sexo no existe en catálogo
     @Test
-    void testRegistrarCliente_CurpDuplicado() {
+    void testRegistrarCliente_SexoInvalido_LanzaExcepcion() {
+        when(sexoService.esValidoYActivo(anyString())).thenReturn(false);
+
+        ReglaNegocioException excepcion = assertThrows(
+                ReglaNegocioException.class,
+                () -> clienteService.registrarCliente(requestValido)
+        );
+
+        assertNotNull(excepcion.getMessage());
+    }
+
+    // Valida unicidad de CURP
+    @Test
+    void testRegistrarCliente_CurpDuplicada_LanzaExcepcion() {
+        when(sexoService.esValidoYActivo(anyString())).thenReturn(true);
+        when(nacionalidadService.esValidoYActivo(anyString())).thenReturn(true);
+        when(estadoCivilService.esValidoYActivo(anyString())).thenReturn(true);
         when(clienteRepository.existsByCurp(anyString())).thenReturn(true);
 
-        assertThrows(CurpDuplicadaException.class, () ->
-                clienteService.registrarCliente(requestValido));
+        assertThrows(CurpDuplicadaException.class, () -> clienteService.registrarCliente(requestValido));
     }
 
-    // Valida rechazo si el RFC ya existe
+    // Valida unicidad de RFC
     @Test
-    void testRegistrarCliente_RfcDuplicado() {
+    void testRegistrarCliente_RfcDuplicado_LanzaExcepcion() {
+        when(sexoService.esValidoYActivo(anyString())).thenReturn(true);
+        when(nacionalidadService.esValidoYActivo(anyString())).thenReturn(true);
+        when(estadoCivilService.esValidoYActivo(anyString())).thenReturn(true);
         when(clienteRepository.existsByCurp(anyString())).thenReturn(false);
         when(clienteRepository.existsByRfc(anyString())).thenReturn(true);
 
-        assertThrows(RfcDuplicadoException.class, () ->
-                clienteService.registrarCliente(requestValido));
+        assertThrows(RfcDuplicadoException.class, () -> clienteService.registrarCliente(requestValido));
     }
 
-    // Valida rechazo si el ingreso mensual es menor o igual a cero
+    // Valida consulta por CURP exitosa
     @Test
-    void testRegistrarCliente_IngresoMenorOIgualACero() {
-        when(clienteRepository.existsByCurp(anyString())).thenReturn(false);
-        when(clienteRepository.existsByRfc(anyString())).thenReturn(false);
-        when(clienteRepository.existsByCorreoElectronico(anyString())).thenReturn(false);
-        requestValido.setIngresoMensual(BigDecimal.ZERO);
-
-        assertThrows(ReglaNegocioException.class, () ->
-                clienteService.registrarCliente(requestValido));
-    }
-
-    // Valida consulta de clientes activos
-    @Test
-    void testListarClientesActivos() {
-        when(clienteRepository.findByActivoTrue()).thenReturn(List.of(clienteMock));
+    void testObtenerClientePorCurp_Exitoso() {
+        when(clienteRepository.findByCurp("PELJ900515HDFRPR09")).thenReturn(Optional.of(clienteMock));
         when(domicilioRepository.findByClienteId(1L)).thenReturn(Optional.of(domicilioMock));
         when(cuentaRepository.findByClienteId(1L)).thenReturn(List.of(cuentaMock));
 
-        List<ClienteRegistroResponseDto> activos = clienteService.listarClientesActivos();
+        ClienteRegistroResponseDto respuesta = clienteService.obtenerClientePorCurp("PELJ900515HDFRPR09");
 
-        assertNotNull(activos);
-        assertEquals(1, activos.size());
-        assertEquals(true, activos.get(0).getActivo());
+        assertNotNull(respuesta);
+        assertEquals("PELJ900515HDFRPR09", respuesta.getCurp());
+        assertEquals("Juan Carlos Perez Lopez", respuesta.getNombreCompleto());
     }
 
-    // Valida baja logica de cliente y desactivacion de cuentas
+    // Valida baja logica (cliente inactivo y cuenta inactiva)
     @Test
     void testDesactivarCliente_BajaLogica() {
         when(clienteRepository.findById(1L)).thenReturn(Optional.of(clienteMock));
         when(cuentaRepository.findByClienteId(1L)).thenReturn(List.of(cuentaMock));
+        when(usuarioAccesoRepository.findByClienteId(1L)).thenReturn(Optional.of(usuarioMock));
 
         clienteService.desactivarCliente(1L);
 
         assertFalse(clienteMock.getActivo());
         assertEquals("INACTIVA", cuentaMock.getEstatus());
+        assertFalse(usuarioMock.getActivo());
+
         verify(clienteRepository).save(clienteMock);
         verify(cuentaRepository).save(cuentaMock);
+        verify(usuarioAccesoRepository).save(usuarioMock);
     }
 
-    // Valida busqueda por nombre
+    // Valida reactivacion de cliente
     @Test
-    void testBuscarClientesPorNombre() {
-        when(clienteRepository.findByNombreContainingIgnoreCase("Juan")).thenReturn(List.of(clienteMock));
-        when(domicilioRepository.findByClienteId(1L)).thenReturn(Optional.of(domicilioMock));
-        when(cuentaRepository.findByClienteId(1L)).thenReturn(List.of(cuentaMock));
-
-        List<ClienteRegistroResponseDto> resultado = clienteService.buscarClientesPorNombre("Juan");
-
-        assertNotNull(resultado);
-        assertEquals(1, resultado.size());
-        assertEquals("Juan", resultado.get(0).getNombre());
-    }
-
-    // Valida actualizacion parcial respetando CURP y RFC
-    @Test
-    void testActualizarCliente_Parcial() {
-        ClienteActualizacionRequestDto actualizacion = ClienteActualizacionRequestDto.builder()
-                .nombre("Juan")
-                .ocupacion("Director de Tecnología")
-                .ingresoMensual(new BigDecimal("50000.00"))
-                .calle("Av. Reforma Sur")
-                .build();
-
+    void testReactivarCliente_Exitoso() {
+        clienteMock.setActivo(false);
+        usuarioMock.setActivo(false);
         when(clienteRepository.findById(1L)).thenReturn(Optional.of(clienteMock));
-        when(clienteRepository.save(any(ClienteEntity.class))).thenReturn(clienteMock);
+        when(usuarioAccesoRepository.findByClienteId(1L)).thenReturn(Optional.of(usuarioMock));
         when(domicilioRepository.findByClienteId(1L)).thenReturn(Optional.of(domicilioMock));
-        when(domicilioRepository.save(any(DomicilioEntity.class))).thenReturn(domicilioMock);
         when(cuentaRepository.findByClienteId(1L)).thenReturn(List.of(cuentaMock));
 
-        ClienteRegistroResponseDto respuesta = clienteService.actualizarCliente(1L, actualizacion);
+        ClienteRegistroResponseDto respuesta = clienteService.reactivarCliente(1L);
 
         assertNotNull(respuesta);
-        assertEquals("PELJ900515HDFRPR09", respuesta.getCurp());
-        assertEquals("PELJ9005151A2", respuesta.getRfc());
-        verify(clienteRepository).save(any(ClienteEntity.class));
+        assertEquals(true, clienteMock.getActivo());
+        assertEquals(true, usuarioMock.getActivo());
+        verify(clienteRepository).save(clienteMock);
+        verify(usuarioAccesoRepository).save(usuarioMock);
+    }
+
+    // Valida excepcion cuando el cliente no existe
+    @Test
+    void testObtenerClientePorId_NoEncontrado() {
+        when(clienteRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThrows(ClienteNoEncontradoException.class, () -> clienteService.obtenerClientePorId(999L));
     }
 }

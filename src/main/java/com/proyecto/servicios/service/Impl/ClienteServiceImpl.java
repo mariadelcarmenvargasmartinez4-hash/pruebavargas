@@ -16,14 +16,20 @@ import com.proyecto.servicios.model.cliente.ClienteRegistroResponseDto;
 import com.proyecto.servicios.model.cliente.CuentaBancariaDto;
 import com.proyecto.servicios.model.cliente.DomicilioDto;
 import com.proyecto.servicios.model.cliente.UsuarioAccesoDto;
+import com.proyecto.servicios.model.util.MetricasTextoDto;
 import com.proyecto.servicios.repositorys.cliente.ClienteRepository;
 import com.proyecto.servicios.repositorys.cliente.CuentaRepository;
 import com.proyecto.servicios.repositorys.cliente.DomicilioRepository;
 import com.proyecto.servicios.repositorys.cliente.UsuarioAccesoRepository;
 import com.proyecto.servicios.service.ClienteService;
+import com.proyecto.servicios.service.EstadoCivilService;
+import com.proyecto.servicios.service.NacionalidadService;
+import com.proyecto.servicios.service.SexoService;
 import com.proyecto.servicios.util.GeneradorCuentaBancariaUtil;
+import com.proyecto.servicios.util.MetricasTextoUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,9 +38,11 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Period;
 import java.util.List;
+import java.util.Optional;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-// Implementacion de la logica de negocio para clientes con persistencia en PostgreSQL
+// Implementación de la lógica de negocio para clientes desacoplada, con validación declarativa y sin ifs anidados
 @Slf4j
 @Service
 public class ClienteServiceImpl implements ClienteService {
@@ -44,147 +52,87 @@ public class ClienteServiceImpl implements ClienteService {
     private final CuentaRepository cuentaRepository;
     private final UsuarioAccesoRepository usuarioAccesoRepository;
     private final GeneradorCuentaBancariaUtil generadorCuentaUtil;
-    private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
+    private final PasswordEncoder passwordEncoder;
+    private final SexoService sexoService;
+    private final NacionalidadService nacionalidadService;
+    private final EstadoCivilService estadoCivilService;
+    private final MetricasTextoUtil metricasTextoUtil;
 
     @Value("${banco.cuenta.saldo-inicial-default:500.00}")
     private BigDecimal saldoInicialPorDefecto;
 
-    // Inyeccion de dependencias por constructor
     public ClienteServiceImpl(ClienteRepository clienteRepository,
                               DomicilioRepository domicilioRepository,
                               CuentaRepository cuentaRepository,
                               UsuarioAccesoRepository usuarioAccesoRepository,
                               GeneradorCuentaBancariaUtil generadorCuentaUtil,
-                              org.springframework.security.crypto.password.PasswordEncoder passwordEncoder) {
+                              PasswordEncoder passwordEncoder,
+                              SexoService sexoService,
+                              NacionalidadService nacionalidadService,
+                              EstadoCivilService estadoCivilService,
+                              MetricasTextoUtil metricasTextoUtil) {
         this.clienteRepository = clienteRepository;
         this.domicilioRepository = domicilioRepository;
         this.cuentaRepository = cuentaRepository;
         this.usuarioAccesoRepository = usuarioAccesoRepository;
         this.generadorCuentaUtil = generadorCuentaUtil;
         this.passwordEncoder = passwordEncoder;
+        this.sexoService = sexoService;
+        this.nacionalidadService = nacionalidadService;
+        this.estadoCivilService = estadoCivilService;
+        this.metricasTextoUtil = metricasTextoUtil;
     }
 
-    // Registra un nuevo cliente persona fisica, su domicilio y crea automaticamente su cuenta bancaria
     @Override
     @Transactional(transactionManager = "sfTransactionManager")
     public ClienteRegistroResponseDto registrarCliente(ClienteRegistroRequestDto dto) {
-        log.info("Iniciando registro de cliente persona fisica con CURP: {}", dto.getCurp());
+        log.info("Iniciando registro de cliente persona física con CURP: {}", dto.getCurp());
 
-        // 1. Regla de negocio: El cliente debe ser mayor de edad (18 anos o mas)
+        // 1. Reglas de negocio iniciales (Guard Clauses sin ifs anidados)
         validarMayoriaDeEdad(dto.getFechaNacimiento());
+        validarCatalogos(dto.getSexo(), dto.getNacionalidad(), dto.getEstadoCivil());
 
-        // 2. Regla de negocio: No pueden existir dos clientes con la misma CURP
         String curp = dto.getCurp().trim().toUpperCase();
-        if (clienteRepository.existsByCurp(curp)) {
-            log.warn("El CURP '{}' ya se encuentra registrado", curp);
-            throw new CurpDuplicadaException("El CURP '" + curp + "' ya esta registrado");
-        }
+        validarCurpUnico(curp);
 
-        // 3. Regla de negocio: No pueden existir dos clientes con el mismo RFC
         String rfc = dto.getRfc().trim().toUpperCase();
-        if (clienteRepository.existsByRfc(rfc)) {
-            log.warn("El RFC '{}' ya se encuentra registrado", rfc);
-            throw new RfcDuplicadoException("El RFC '" + rfc + "' ya esta registrado");
-        }
+        validarRfcUnico(rfc);
 
-        // 4. Regla de negocio: No pueden existir dos clientes con el mismo correo electronico
         String correo = dto.getCorreoElectronico().trim().toLowerCase();
-        if (clienteRepository.existsByCorreoElectronico(correo)) {
-            log.warn("El correo '{}' ya se encuentra registrado", correo);
-            throw new ClienteYaRegistradoException("El correo electronico ya esta registrado");
-        }
+        validarCorreoUnico(correo);
 
-        // 5. Regla de negocio: El ingreso mensual debe ser mayor a cero
-        if (dto.getIngresoMensual() == null || dto.getIngresoMensual().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new ReglaNegocioException("El ingreso mensual debe ser mayor a cero");
-        }
+        // 2. Registro de métricas de texto y caracteres en campos alfanuméricos clave
+        registrarMetricasTexto(curp, rfc);
 
-        // 6. Regla de negocio: El saldo inicial no puede ser negativo
-        if (dto.getSaldoInicial() != null && dto.getSaldoInicial().compareTo(BigDecimal.ZERO) < 0) {
-            throw new ReglaNegocioException("El saldo inicial no puede ser negativo");
-        }
+        // 3. Saldo inicial
+        BigDecimal saldoInicial = Optional.ofNullable(dto.getSaldoInicial())
+                .filter(saldo -> saldo.compareTo(BigDecimal.ZERO) >= 0)
+                .orElse(Optional.ofNullable(saldoInicialPorDefecto).orElse(new BigDecimal("500.00")));
 
-        BigDecimal saldoInicial = saldoInicialPorDefecto != null
-            ? saldoInicialPorDefecto
-            : new BigDecimal("500.00");
-
-        // 7. Persistencia de la entidad ClienteEntity (Tabla clientes)
-        ClienteEntity cliente = ClienteEntity.builder()
-                .nombre(dto.getNombre().trim())
-                .segundoNombre(dto.getSegundoNombre() != null ? dto.getSegundoNombre().trim() : null)
-                .apellidoPaterno(dto.getApellidoPaterno().trim())
-                .apellidoMaterno(dto.getApellidoMaterno().trim())
-                .fechaNacimiento(dto.getFechaNacimiento())
-                .curp(curp)
-                .rfc(rfc)
-                .sexo(dto.getSexo().trim().toUpperCase())
-                .nacionalidad(dto.getNacionalidad().trim())
-                .estadoCivil(dto.getEstadoCivil().trim().toUpperCase())
-                .correoElectronico(correo)
-                .telefonoMovil(dto.getTelefonoMovil().trim())
-                .telefonoAlternativo(dto.getTelefonoAlternativo() != null && !dto.getTelefonoAlternativo().isBlank() ? dto.getTelefonoAlternativo().trim() : null)
-                .ocupacion(dto.getOcupacion().trim())
-                .empresa(dto.getEmpresa().trim())
-                .ingresoMensual(dto.getIngresoMensual())
-                .activo(true)
-                .build();
-
+        // 4. Persistencia de ClienteEntity
+        ClienteEntity cliente = construirClienteEntity(dto, curp, rfc, correo);
         ClienteEntity clienteGuardado = clienteRepository.save(cliente);
 
-        // 8. Persistencia de la entidad DomicilioEntity (Tabla domicilios)
-        DomicilioEntity domicilio = DomicilioEntity.builder()
-                .cliente(clienteGuardado)
-                .calle(dto.getCalle().trim())
-                .numeroExterior(dto.getNumeroExterior().trim())
-                .numeroInterior(dto.getNumeroInterior() != null && !dto.getNumeroInterior().isBlank() ? dto.getNumeroInterior().trim() : null)
-                .colonia(dto.getColonia().trim())
-                .municipio(dto.getMunicipio().trim())
-                .estado(dto.getEstado().trim())
-                .codigoPostal(dto.getCodigoPostal().trim())
-                .pais(dto.getPais().trim())
-                .build();
-
+        // 5. Persistencia de DomicilioEntity
+        DomicilioEntity domicilio = construirDomicilioEntity(dto, clienteGuardado);
         DomicilioEntity domicilioGuardado = domicilioRepository.save(domicilio);
         clienteGuardado.setDomicilio(domicilioGuardado);
 
-        // 9. Creacion automatica de cuenta bancaria unica (Tabla cuentas)
-        String numeroCuenta = generarNumeroCuentaUnico();
-        String clabe = generadorCuentaUtil.generarClabe(numeroCuenta);
-        String tipoCuenta = (dto.getTipoCuenta() != null && !dto.getTipoCuenta().isBlank()) ? dto.getTipoCuenta().toUpperCase() : "DEBITO";
-
-        CuentaEntity cuenta = CuentaEntity.builder()
-                .cliente(clienteGuardado)
-                .numeroCuenta(numeroCuenta)
-                .clabe(clabe)
-                .tipoCuenta(tipoCuenta)
-                .saldo(saldoInicial)
-                .moneda("MXN")
-                .estatus("ACTIVA")
-                .build();
-
+        // 6. Creación automática de Cuenta Bancaria
+        CuentaEntity cuenta = construirCuentaEntity(dto, clienteGuardado, saldoInicial);
         CuentaEntity cuentaGuardada = cuentaRepository.save(cuenta);
 
-        // 10. Creacion automatica de Usuario de Acceso (correo como username, password cifrado con BCrypt)
-        String passwordCifrada = passwordEncoder.encode(dto.getPassword());
-
-        UsuarioAccesoEntity usuarioAcceso = UsuarioAccesoEntity.builder()
-                .cliente(clienteGuardado)
-                .username(correo)
-                .passwordHash(passwordCifrada)
-                .rol("CLIENTE")
-                .activo(true)
-                .build();
-
-        UsuarioAccesoEntity usuarioGuardado = usuarioAccesoRepository.save(usuarioAcceso);
+        // 7. Creación automática de Usuario de Acceso
+        UsuarioAccesoEntity usuario = construirUsuarioEntity(dto, clienteGuardado, correo);
+        UsuarioAccesoEntity usuarioGuardado = usuarioAccesoRepository.save(usuario);
         clienteGuardado.setUsuarioAcceso(usuarioGuardado);
 
-        log.info("Usuario de acceso creado exitosamente para el cliente ID: {}, username: {}", clienteGuardado.getId(), usuarioGuardado.getUsername());
-        log.info("Cliente registrado exitosamente. ID: {}, cuenta bancaria: {}, saldo inicial: {}", clienteGuardado.getId(), cuentaGuardada.getNumeroCuenta(), cuentaGuardada.getSaldo());
+        log.info("Cliente registrado exitosamente. ID: {}, cuenta bancaria: {}, usuario: {}",
+                clienteGuardado.getId(), cuentaGuardada.getNumeroCuenta(), usuarioGuardado.getUsername());
 
         return mapearARespuestaDto(clienteGuardado, domicilioGuardado, List.of(cuentaGuardada), cuentaGuardada, usuarioGuardado);
     }
 
-    // Consulta todos los clientes registrados
     @Override
     @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
     public List<ClienteRegistroResponseDto> listarClientes() {
@@ -193,7 +141,6 @@ public class ClienteServiceImpl implements ClienteService {
                 .collect(Collectors.toList());
     }
 
-    // Consulta solo clientes activos
     @Override
     @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
     public List<ClienteRegistroResponseDto> listarClientesActivos() {
@@ -202,62 +149,51 @@ public class ClienteServiceImpl implements ClienteService {
                 .collect(Collectors.toList());
     }
 
-    // Consulta cliente por ID
     @Override
     @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
     public ClienteRegistroResponseDto obtenerClientePorId(Long id) {
-        ClienteEntity cliente = clienteRepository.findById(id)
+        return clienteRepository.findById(id)
+                .map(this::construirRespuestaCompleta)
                 .orElseThrow(() -> new ClienteNoEncontradoException("Cliente no encontrado con ID " + id));
-
-        return construirRespuestaCompleta(cliente);
     }
 
-    // Consulta cliente por CURP
     @Override
     @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
     public ClienteRegistroResponseDto obtenerClientePorCurp(String curp) {
         String curpLimpio = curp.trim().toUpperCase();
-        ClienteEntity cliente = clienteRepository.findByCurp(curpLimpio)
+        return clienteRepository.findByCurp(curpLimpio)
+                .map(this::construirRespuestaCompleta)
                 .orElseThrow(() -> new ClienteNoEncontradoException("Cliente no encontrado con CURP " + curpLimpio));
-
-        return construirRespuestaCompleta(cliente);
     }
 
-    // Consulta cliente por RFC
     @Override
     @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
     public ClienteRegistroResponseDto obtenerClientePorRfc(String rfc) {
         String rfcLimpio = rfc.trim().toUpperCase();
-        ClienteEntity cliente = clienteRepository.findByRfc(rfcLimpio)
+        return clienteRepository.findByRfc(rfcLimpio)
+                .map(this::construirRespuestaCompleta)
                 .orElseThrow(() -> new ClienteNoEncontradoException("Cliente no encontrado con RFC " + rfcLimpio));
-
-        return construirRespuestaCompleta(cliente);
     }
 
-    // Consulta cliente por correo electronico
     @Override
     @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
     public ClienteRegistroResponseDto obtenerClientePorCorreo(String correo) {
         String correoLimpio = correo.trim().toLowerCase();
-        ClienteEntity cliente = clienteRepository.findByCorreoElectronico(correoLimpio)
+        return clienteRepository.findByCorreoElectronico(correoLimpio)
+                .map(this::construirRespuestaCompleta)
                 .orElseThrow(() -> new ClienteNoEncontradoException("Cliente no encontrado con correo " + correoLimpio));
-
-        return construirRespuestaCompleta(cliente);
     }
 
-    // Consulta cliente por numero de cuenta
     @Override
     @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
     public ClienteRegistroResponseDto obtenerClientePorNumeroCuenta(String numeroCuenta) {
         String cuentaLimpia = numeroCuenta.trim();
         CuentaEntity cuenta = cuentaRepository.findByNumeroCuenta(cuentaLimpia)
-                .orElseThrow(() -> new CuentaNoEncontradaException("Cuenta bancaria no encontrada con numero " + cuentaLimpia));
+                .orElseThrow(() -> new CuentaNoEncontradaException("Cuenta bancaria no encontrada con número " + cuentaLimpia));
 
-        ClienteEntity cliente = cuenta.getCliente();
-        return construirRespuestaCompleta(cliente);
+        return construirRespuestaCompleta(cuenta.getCliente());
     }
 
-    // Busquedas por filtros parciales
     @Override
     @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
     public List<ClienteRegistroResponseDto> buscarClientesPorNombre(String nombre) {
@@ -282,7 +218,6 @@ public class ClienteServiceImpl implements ClienteService {
                 .collect(Collectors.toList());
     }
 
-    // Consulta clientes registrados en rango de fechas
     @Override
     @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
     public List<ClienteRegistroResponseDto> buscarClientesPorRangoFechas(LocalDateTime fechaInicio, LocalDateTime fechaFin) {
@@ -291,82 +226,28 @@ public class ClienteServiceImpl implements ClienteService {
                 .collect(Collectors.toList());
     }
 
-    // Actualizacion parcial de datos de cliente (CURP, RFC y cuenta son inmutables)
     @Override
     @Transactional(transactionManager = "sfTransactionManager")
     public ClienteRegistroResponseDto actualizarCliente(Long id, ClienteActualizacionRequestDto dto) {
-        log.info("Iniciando actualizacion parcial de cliente con ID: {}", id);
+        log.info("Iniciando actualización de cliente con ID: {}", id);
 
         ClienteEntity cliente = clienteRepository.findById(id)
                 .orElseThrow(() -> new ClienteNoEncontradoException("Cliente no encontrado con ID " + id));
 
-        // Validacion de fecha de nacimiento si se envio
-        if (dto.getFechaNacimiento() != null) {
-            validarMayoriaDeEdad(dto.getFechaNacimiento());
-            cliente.setFechaNacimiento(dto.getFechaNacimiento());
-        }
+        actualizarDatosPersonales(cliente, dto);
+        actualizarDatosContacto(cliente, dto);
+        actualizarDatosLaborales(cliente, dto);
+        actualizarDomicilio(cliente, dto);
 
-        // Validacion de unicidad de correo si ha cambiado
-        if (dto.getCorreoElectronico() != null && !dto.getCorreoElectronico().isBlank()) {
-            String nuevoCorreo = dto.getCorreoElectronico().trim().toLowerCase();
-            if (!nuevoCorreo.equalsIgnoreCase(cliente.getCorreoElectronico()) && clienteRepository.existsByCorreoElectronico(nuevoCorreo)) {
-                throw new ClienteYaRegistradoException("El correo electronico ya esta registrado por otro cliente");
-            }
-            cliente.setCorreoElectronico(nuevoCorreo);
-        }
-
-        // Actualizacion de datos personales
-        if (dto.getNombre() != null && !dto.getNombre().isBlank()) cliente.setNombre(dto.getNombre().trim());
-        if (dto.getSegundoNombre() != null) cliente.setSegundoNombre(dto.getSegundoNombre().trim());
-        if (dto.getApellidoPaterno() != null && !dto.getApellidoPaterno().isBlank()) cliente.setApellidoPaterno(dto.getApellidoPaterno().trim());
-        if (dto.getApellidoMaterno() != null && !dto.getApellidoMaterno().isBlank()) cliente.setApellidoMaterno(dto.getApellidoMaterno().trim());
-        if (dto.getSexo() != null && !dto.getSexo().isBlank()) cliente.setSexo(dto.getSexo().trim().toUpperCase());
-        if (dto.getNacionalidad() != null && !dto.getNacionalidad().isBlank()) cliente.setNacionalidad(dto.getNacionalidad().trim());
-        if (dto.getEstadoCivil() != null && !dto.getEstadoCivil().isBlank()) cliente.setEstadoCivil(dto.getEstadoCivil().trim().toUpperCase());
-
-        // Actualizacion de datos de contacto
-        if (dto.getTelefonoMovil() != null && !dto.getTelefonoMovil().isBlank()) cliente.setTelefonoMovil(dto.getTelefonoMovil().trim());
-        if (dto.getTelefonoAlternativo() != null) cliente.setTelefonoAlternativo(dto.getTelefonoAlternativo().trim());
-
-        // Actualizacion laboral
-        if (dto.getOcupacion() != null && !dto.getOcupacion().isBlank()) cliente.setOcupacion(dto.getOcupacion().trim());
-        if (dto.getEmpresa() != null && !dto.getEmpresa().isBlank()) cliente.setEmpresa(dto.getEmpresa().trim());
-        if (dto.getIngresoMensual() != null) {
-            if (dto.getIngresoMensual().compareTo(BigDecimal.ZERO) <= 0) {
-                throw new ReglaNegocioException("El ingreso mensual debe ser mayor a cero");
-            }
-            cliente.setIngresoMensual(dto.getIngresoMensual());
-        }
-
-        ClienteEntity clienteActualizado = clienteRepository.save(cliente);
-
-        // Actualizacion del Domicilio si viene algun campo
-        DomicilioEntity domicilio = domicilioRepository.findByClienteId(clienteActualizado.getId())
-                .orElseGet(() -> DomicilioEntity.builder().cliente(clienteActualizado).build());
-
-        boolean actualizoDomicilio = false;
-        if (dto.getCalle() != null && !dto.getCalle().isBlank()) { domicilio.setCalle(dto.getCalle().trim()); actualizoDomicilio = true; }
-        if (dto.getNumeroExterior() != null && !dto.getNumeroExterior().isBlank()) { domicilio.setNumeroExterior(dto.getNumeroExterior().trim()); actualizoDomicilio = true; }
-        if (dto.getNumeroInterior() != null) { domicilio.setNumeroInterior(dto.getNumeroInterior().trim()); actualizoDomicilio = true; }
-        if (dto.getColonia() != null && !dto.getColonia().isBlank()) { domicilio.setColonia(dto.getColonia().trim()); actualizoDomicilio = true; }
-        if (dto.getMunicipio() != null && !dto.getMunicipio().isBlank()) { domicilio.setMunicipio(dto.getMunicipio().trim()); actualizoDomicilio = true; }
-        if (dto.getEstado() != null && !dto.getEstado().isBlank()) { domicilio.setEstado(dto.getEstado().trim()); actualizoDomicilio = true; }
-        if (dto.getCodigoPostal() != null && !dto.getCodigoPostal().isBlank()) { domicilio.setCodigoPostal(dto.getCodigoPostal().trim()); actualizoDomicilio = true; }
-        if (dto.getPais() != null && !dto.getPais().isBlank()) { domicilio.setPais(dto.getPais().trim()); actualizoDomicilio = true; }
-
-        if (actualizoDomicilio && domicilio.getCalle() != null) {
-            domicilioRepository.save(domicilio);
-        }
-
-        log.info("Cliente con ID {} actualizado exitosamente", id);
-        return construirRespuestaCompleta(clienteActualizado);
+        ClienteEntity actualizado = clienteRepository.save(cliente);
+        log.info("Cliente ID {} actualizado exitosamente", id);
+        return construirRespuestaCompleta(actualizado);
     }
 
-    // 5. Baja Logica: Desactiva cliente y sus cuentas bancarias sin eliminarlos de la BD
     @Override
     @Transactional(transactionManager = "sfTransactionManager")
     public void desactivarCliente(Long id) {
-        log.info("Ejecutando baja logica para cliente con ID: {}", id);
+        log.info("Ejecutando baja lógica para cliente con ID: {}", id);
 
         ClienteEntity cliente = clienteRepository.findById(id)
                 .orElseThrow(() -> new ClienteNoEncontradoException("Cliente no encontrado con ID " + id));
@@ -374,23 +255,19 @@ public class ClienteServiceImpl implements ClienteService {
         cliente.setActivo(false);
         clienteRepository.save(cliente);
 
-        // Regla de negocio: Solo los clientes activos podrán tener cuentas activas.
-        // Al desactivar el cliente, se desactivan o cancelan sus cuentas y su usuario de acceso.
-        List<CuentaEntity> cuentas = cuentaRepository.findByClienteId(cliente.getId());
-        for (CuentaEntity cuenta : cuentas) {
+        cuentaRepository.findByClienteId(cliente.getId()).forEach(cuenta -> {
             cuenta.setEstatus("INACTIVA");
             cuentaRepository.save(cuenta);
-        }
+        });
 
         usuarioAccesoRepository.findByClienteId(cliente.getId()).ifPresent(usuario -> {
             usuario.setActivo(false);
             usuarioAccesoRepository.save(usuario);
         });
 
-        log.info("Cliente con ID {}, sus cuentas y usuario de acceso han sido desactivados exitosamente (baja logica)", id);
+        log.info("Cliente ID {}, sus cuentas y usuario han sido desactivados (baja lógica)", id);
     }
 
-    // Reactiva un cliente, sus cuentas y su usuario
     @Override
     @Transactional(transactionManager = "sfTransactionManager")
     public ClienteRegistroResponseDto reactivarCliente(Long id) {
@@ -410,16 +287,84 @@ public class ClienteServiceImpl implements ClienteService {
         return construirRespuestaCompleta(cliente);
     }
 
-    // Construye la respuesta completa DTO con cliente, domicilio, cuentas y usuario de acceso
-    private ClienteRegistroResponseDto construirRespuestaCompleta(ClienteEntity cliente) {
-        DomicilioEntity domicilio = domicilioRepository.findByClienteId(cliente.getId()).orElse(null);
-        List<CuentaEntity> cuentas = cuentaRepository.findByClienteId(cliente.getId());
-        CuentaEntity cuentaPrincipal = cuentas.isEmpty() ? null : cuentas.get(0);
-        UsuarioAccesoEntity usuario = usuarioAccesoRepository.findByClienteId(cliente.getId()).orElse(null);
-        return mapearARespuestaDto(cliente, domicilio, cuentas, cuentaPrincipal, usuario);
+    // --- Métodos atómicos de actualización sin ifs anidados ---
+
+    private void actualizarDatosPersonales(ClienteEntity cliente, ClienteActualizacionRequestDto dto) {
+        Optional.ofNullable(dto.getFechaNacimiento()).ifPresent(fecha -> {
+            validarMayoriaDeEdad(fecha);
+            cliente.setFechaNacimiento(fecha);
+        });
+
+        Optional.ofNullable(dto.getNombre()).filter(Predicate.not(String::isBlank)).ifPresent(cliente::setNombre);
+        Optional.ofNullable(dto.getSegundoNombre()).ifPresent(cliente::setSegundoNombre);
+        Optional.ofNullable(dto.getApellidoPaterno()).filter(Predicate.not(String::isBlank)).ifPresent(cliente::setApellidoPaterno);
+        Optional.ofNullable(dto.getApellidoMaterno()).filter(Predicate.not(String::isBlank)).ifPresent(cliente::setApellidoMaterno);
+
+        Optional.ofNullable(dto.getSexo()).filter(Predicate.not(String::isBlank)).ifPresent(s -> {
+            if (!sexoService.esValidoYActivo(s)) {
+                throw new ReglaNegocioException("El sexo '" + s + "' no es válido en el catálogo");
+            }
+            cliente.setSexo(s.toUpperCase());
+        });
+
+        Optional.ofNullable(dto.getNacionalidad()).filter(Predicate.not(String::isBlank)).ifPresent(n -> {
+            if (!nacionalidadService.esValidoYActivo(n)) {
+                throw new ReglaNegocioException("La nacionalidad '" + n + "' no es válida en el catálogo");
+            }
+            cliente.setNacionalidad(n.toUpperCase());
+        });
+
+        Optional.ofNullable(dto.getEstadoCivil()).filter(Predicate.not(String::isBlank)).ifPresent(ec -> {
+            if (!estadoCivilService.esValidoYActivo(ec)) {
+                throw new ReglaNegocioException("El estado civil '" + ec + "' no es válido en el catálogo");
+            }
+            cliente.setEstadoCivil(ec.toUpperCase());
+        });
     }
 
-    // Valida mayoria de edad (18 anos o mas)
+    private void actualizarDatosContacto(ClienteEntity cliente, ClienteActualizacionRequestDto dto) {
+        Optional.ofNullable(dto.getCorreoElectronico())
+                .map(String::trim)
+                .map(String::toLowerCase)
+                .filter(correo -> !correo.equalsIgnoreCase(cliente.getCorreoElectronico()))
+                .ifPresent(nuevoCorreo -> {
+                    validarCorreoUnico(nuevoCorreo);
+                    cliente.setCorreoElectronico(nuevoCorreo);
+                });
+
+        Optional.ofNullable(dto.getTelefonoMovil()).filter(Predicate.not(String::isBlank)).ifPresent(cliente::setTelefonoMovil);
+        Optional.ofNullable(dto.getTelefonoAlternativo()).ifPresent(cliente::setTelefonoAlternativo);
+    }
+
+    private void actualizarDatosLaborales(ClienteEntity cliente, ClienteActualizacionRequestDto dto) {
+        Optional.ofNullable(dto.getOcupacion()).filter(Predicate.not(String::isBlank)).ifPresent(cliente::setOcupacion);
+        Optional.ofNullable(dto.getEmpresa()).filter(Predicate.not(String::isBlank)).ifPresent(cliente::setEmpresa);
+        Optional.ofNullable(dto.getIngresoMensual()).ifPresent(ingreso -> {
+            if (ingreso.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new ReglaNegocioException("El ingreso mensual debe ser mayor a cero");
+            }
+            cliente.setIngresoMensual(ingreso);
+        });
+    }
+
+    private void actualizarDomicilio(ClienteEntity cliente, ClienteActualizacionRequestDto dto) {
+        DomicilioEntity domicilio = domicilioRepository.findByClienteId(cliente.getId())
+                .orElseGet(() -> DomicilioEntity.builder().cliente(cliente).build());
+
+        Optional.ofNullable(dto.getCalle()).filter(Predicate.not(String::isBlank)).ifPresent(domicilio::setCalle);
+        Optional.ofNullable(dto.getNumeroExterior()).filter(Predicate.not(String::isBlank)).ifPresent(domicilio::setNumeroExterior);
+        Optional.ofNullable(dto.getNumeroInterior()).ifPresent(domicilio::setNumeroInterior);
+        Optional.ofNullable(dto.getColonia()).filter(Predicate.not(String::isBlank)).ifPresent(domicilio::setColonia);
+        Optional.ofNullable(dto.getMunicipio()).filter(Predicate.not(String::isBlank)).ifPresent(domicilio::setMunicipio);
+        Optional.ofNullable(dto.getEstado()).filter(Predicate.not(String::isBlank)).ifPresent(domicilio::setEstado);
+        Optional.ofNullable(dto.getCodigoPostal()).filter(Predicate.not(String::isBlank)).ifPresent(domicilio::setCodigoPostal);
+        Optional.ofNullable(dto.getPais()).filter(Predicate.not(String::isBlank)).ifPresent(domicilio::setPais);
+
+        Optional.ofNullable(domicilio.getCalle()).ifPresent(c -> domicilioRepository.save(domicilio));
+    }
+
+    // --- Validaciones y Guard Clauses ---
+
     private void validarMayoriaDeEdad(LocalDate fechaNacimiento) {
         if (fechaNacimiento == null) {
             throw new ReglaNegocioException("La fecha de nacimiento es obligatoria");
@@ -429,12 +374,115 @@ public class ClienteServiceImpl implements ClienteService {
         }
         int edad = Period.between(fechaNacimiento, LocalDate.now()).getYears();
         if (edad < 18) {
-            log.warn("Cliente menor de edad. Calculada: {} anos", edad);
-            throw new ReglaNegocioException("El cliente debe ser mayor de edad (18 anos o mas)");
+            throw new ReglaNegocioException("El cliente debe ser mayor de edad (18 años o más)");
         }
     }
 
-    // Genera un numero de cuenta bancaria unico de 10 digitos
+    private void validarCatalogos(String sexo, String nacionalidad, String estadoCivil) {
+        if (!sexoService.esValidoYActivo(sexo)) {
+            throw new ReglaNegocioException("El sexo '" + sexo + "' no es válido o no está activo en el catálogo");
+        }
+        if (!nacionalidadService.esValidoYActivo(nacionalidad)) {
+            throw new ReglaNegocioException("La nacionalidad '" + nacionalidad + "' no es válida o no está activa en el catálogo");
+        }
+        if (!estadoCivilService.esValidoYActivo(estadoCivil)) {
+            throw new ReglaNegocioException("El estado civil '" + estadoCivil + "' no es válido o no está activo en el catálogo");
+        }
+    }
+
+    private void validarCurpUnico(String curp) {
+        if (clienteRepository.existsByCurp(curp)) {
+            throw new CurpDuplicadaException("El CURP '" + curp + "' ya está registrado");
+        }
+    }
+
+    private void validarRfcUnico(String rfc) {
+        if (clienteRepository.existsByRfc(rfc)) {
+            throw new RfcDuplicadoException("El RFC '" + rfc + "' ya está registrado");
+        }
+    }
+
+    private void validarCorreoUnico(String correo) {
+        if (clienteRepository.existsByCorreoElectronico(correo)) {
+            throw new ClienteYaRegistradoException("El correo electrónico ya está registrado");
+        }
+    }
+
+    private void registrarMetricasTexto(String curp, String rfc) {
+        MetricasTextoDto metricasCurp = metricasTextoUtil.analizar("curp", curp);
+        MetricasTextoDto metricasRfc = metricasTextoUtil.analizar("rfc", rfc);
+        log.info("Métricas calculadas - CURP total: {}, letras: {}, dígitos: {}; RFC total: {}, letras: {}, dígitos: {}",
+                metricasCurp.getTotalCaracteres(), metricasCurp.getTotalLetras(), metricasCurp.getTotalDigitos(),
+                metricasRfc.getTotalCaracteres(), metricasRfc.getTotalLetras(), metricasRfc.getTotalDigitos());
+    }
+
+    // --- Constructores de Entidades ---
+
+    private ClienteEntity construirClienteEntity(ClienteRegistroRequestDto dto, String curp, String rfc, String correo) {
+        return ClienteEntity.builder()
+                .nombre(dto.getNombre().trim())
+                .segundoNombre(Optional.ofNullable(dto.getSegundoNombre()).map(String::trim).orElse(null))
+                .apellidoPaterno(dto.getApellidoPaterno().trim())
+                .apellidoMaterno(dto.getApellidoMaterno().trim())
+                .fechaNacimiento(dto.getFechaNacimiento())
+                .curp(curp)
+                .rfc(rfc)
+                .sexo(dto.getSexo().trim().toUpperCase())
+                .nacionalidad(dto.getNacionalidad().trim().toUpperCase())
+                .estadoCivil(dto.getEstadoCivil().trim().toUpperCase())
+                .correoElectronico(correo)
+                .telefonoMovil(dto.getTelefonoMovil().trim())
+                .telefonoAlternativo(Optional.ofNullable(dto.getTelefonoAlternativo()).map(String::trim).filter(Predicate.not(String::isBlank)).orElse(null))
+                .ocupacion(dto.getOcupacion().trim())
+                .empresa(dto.getEmpresa().trim())
+                .ingresoMensual(dto.getIngresoMensual())
+                .activo(true)
+                .build();
+    }
+
+    private DomicilioEntity construirDomicilioEntity(ClienteRegistroRequestDto dto, ClienteEntity cliente) {
+        return DomicilioEntity.builder()
+                .cliente(cliente)
+                .calle(dto.getCalle().trim())
+                .numeroExterior(dto.getNumeroExterior().trim())
+                .numeroInterior(Optional.ofNullable(dto.getNumeroInterior()).map(String::trim).filter(Predicate.not(String::isBlank)).orElse(null))
+                .colonia(dto.getColonia().trim())
+                .municipio(dto.getMunicipio().trim())
+                .estado(dto.getEstado().trim())
+                .codigoPostal(dto.getCodigoPostal().trim())
+                .pais(dto.getPais().trim())
+                .build();
+    }
+
+    private CuentaEntity construirCuentaEntity(ClienteRegistroRequestDto dto, ClienteEntity cliente, BigDecimal saldoInicial) {
+        String numeroCuenta = generarNumeroCuentaUnico();
+        String clabe = generadorCuentaUtil.generarClabe(numeroCuenta);
+        String tipoCuenta = Optional.ofNullable(dto.getTipoCuenta())
+                .filter(Predicate.not(String::isBlank))
+                .map(String::toUpperCase)
+                .orElse("DEBITO");
+
+        return CuentaEntity.builder()
+                .cliente(cliente)
+                .numeroCuenta(numeroCuenta)
+                .clabe(clabe)
+                .tipoCuenta(tipoCuenta)
+                .saldo(saldoInicial)
+                .moneda("MXN")
+                .estatus("ACTIVA")
+                .build();
+    }
+
+    private UsuarioAccesoEntity construirUsuarioEntity(ClienteRegistroRequestDto dto, ClienteEntity cliente, String correo) {
+        return UsuarioAccesoEntity.builder()
+                .cliente(cliente)
+                .username(correo)
+                .passwordHash(passwordEncoder.encode(dto.getPassword()))
+                .rol("CLIENTE")
+                .activo(true)
+                .build();
+    }
+
     private String generarNumeroCuentaUnico() {
         String cuenta;
         int intentos = 0;
@@ -442,62 +490,66 @@ public class ClienteServiceImpl implements ClienteService {
             cuenta = generadorCuentaUtil.generarNumeroCuenta();
             intentos++;
             if (intentos > 10) {
-                throw new ReglaNegocioException("No se pudo generar un numero de cuenta unico");
+                throw new ReglaNegocioException("No se pudo generar un número de cuenta único");
             }
         } while (cuentaRepository.existsByNumeroCuenta(cuenta));
         return cuenta;
     }
 
-    // Mapeador de entidades a DTO
+    private ClienteRegistroResponseDto construirRespuestaCompleta(ClienteEntity cliente) {
+        DomicilioEntity domicilio = domicilioRepository.findByClienteId(cliente.getId()).orElse(null);
+        List<CuentaEntity> cuentas = cuentaRepository.findByClienteId(cliente.getId());
+        CuentaEntity cuentaPrincipal = cuentas.isEmpty() ? null : cuentas.get(0);
+        UsuarioAccesoEntity usuario = usuarioAccesoRepository.findByClienteId(cliente.getId()).orElse(null);
+        return mapearARespuestaDto(cliente, domicilio, cuentas, cuentaPrincipal, usuario);
+    }
+
     private ClienteRegistroResponseDto mapearARespuestaDto(ClienteEntity cliente,
                                                           DomicilioEntity domicilio,
                                                           List<CuentaEntity> cuentas,
                                                           CuentaEntity cuentaPrincipal,
                                                           UsuarioAccesoEntity usuarioAcceso) {
         StringBuilder nombreCompleto = new StringBuilder(cliente.getNombre());
-        if (cliente.getSegundoNombre() != null && !cliente.getSegundoNombre().isBlank()) {
-            nombreCompleto.append(" ").append(cliente.getSegundoNombre());
-        }
+        Optional.ofNullable(cliente.getSegundoNombre())
+                .filter(Predicate.not(String::isBlank))
+                .ifPresent(sn -> nombreCompleto.append(" ").append(sn));
         nombreCompleto.append(" ").append(cliente.getApellidoPaterno());
         nombreCompleto.append(" ").append(cliente.getApellidoMaterno());
 
-        DomicilioDto domDto = null;
-        if (domicilio != null) {
-            domDto = DomicilioDto.builder()
-                    .idDomicilio(domicilio.getId())
-                    .calle(domicilio.getCalle())
-                    .numeroExterior(domicilio.getNumeroExterior())
-                    .numeroInterior(domicilio.getNumeroInterior())
-                    .colonia(domicilio.getColonia())
-                    .municipio(domicilio.getMunicipio())
-                    .estado(domicilio.getEstado())
-                    .codigoPostal(domicilio.getCodigoPostal())
-                    .pais(domicilio.getPais())
-                    .build();
-        }
+        DomicilioDto domDto = Optional.ofNullable(domicilio)
+                .map(d -> DomicilioDto.builder()
+                        .idDomicilio(d.getId())
+                        .calle(d.getCalle())
+                        .numeroExterior(d.getNumeroExterior())
+                        .numeroInterior(d.getNumeroInterior())
+                        .colonia(d.getColonia())
+                        .municipio(d.getMunicipio())
+                        .estado(d.getEstado())
+                        .codigoPostal(d.getCodigoPostal())
+                        .pais(d.getPais())
+                        .build())
+                .orElse(null);
 
-        CuentaBancariaDto cuentaPrincipalDto = null;
-        if (cuentaPrincipal != null) {
-            cuentaPrincipalDto = mapearCuentaADto(cuentaPrincipal);
-        }
+        CuentaBancariaDto cuentaPrincipalDto = Optional.ofNullable(cuentaPrincipal)
+                .map(this::mapearCuentaADto)
+                .orElse(null);
 
-        List<CuentaBancariaDto> cuentasDto = (cuentas != null)
-                ? cuentas.stream().map(this::mapearCuentaADto).collect(Collectors.toList())
-                : List.of();
+        List<CuentaBancariaDto> cuentasDto = Optional.ofNullable(cuentas)
+                .map(c -> c.stream().map(this::mapearCuentaADto).collect(Collectors.toList()))
+                .orElse(List.of());
 
-        UsuarioAccesoDto usuarioDto = null;
-        if (usuarioAcceso != null) {
-            usuarioDto = UsuarioAccesoDto.builder()
-                    .idUsuario(usuarioAcceso.getId())
-                    .username(usuarioAcceso.getUsername())
-                    .activo(usuarioAcceso.getActivo())
-                    .fechaCreacion(usuarioAcceso.getFechaCreacion())
-                    .build();
-        }
+        UsuarioAccesoDto usuarioDto = Optional.ofNullable(usuarioAcceso)
+                .map(u -> UsuarioAccesoDto.builder()
+                        .idUsuario(u.getId())
+                        .username(u.getUsername())
+                        .activo(u.getActivo())
+                        .fechaCreacion(u.getFechaCreacion())
+                        .build())
+                .orElse(null);
 
         return ClienteRegistroResponseDto.builder()
                 .codigo(0)
-                .mensaje("Operacion realizada con exito")
+                .mensaje("Operación realizada con éxito")
                 .idCliente(cliente.getId())
                 .nombreCompleto(nombreCompleto.toString())
                 .nombre(cliente.getNombre())

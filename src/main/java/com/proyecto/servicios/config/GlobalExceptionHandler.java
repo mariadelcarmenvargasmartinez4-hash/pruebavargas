@@ -1,5 +1,7 @@
 package com.proyecto.servicios.config;
 
+import com.proyecto.servicios.exception.CatalogoDuplicadoException;
+import com.proyecto.servicios.exception.CatalogoNoEncontradoException;
 import com.proyecto.servicios.exception.ClienteNoEncontradoException;
 import com.proyecto.servicios.exception.ClienteYaRegistradoException;
 import com.proyecto.servicios.exception.CorreoDuplicadoException;
@@ -107,6 +109,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(PasswordInvalidaException.class)
     public ResponseEntity<Map<String, Object>> handlePasswordInvalida(PasswordInvalidaException ex) {
         return buildErrorResponse(HttpStatus.BAD_REQUEST, "Contrasena invalida", ex.getMessage());
+    }
+
+    @ExceptionHandler(CatalogoNoEncontradoException.class)
+    public ResponseEntity<Map<String, Object>> handleCatalogoNoEncontrado(CatalogoNoEncontradoException ex) {
+        return buildErrorResponse(HttpStatus.NOT_FOUND, "Elemento de catálogo no encontrado", ex.getMessage());
+    }
+
+    @ExceptionHandler(CatalogoDuplicadoException.class)
+    public ResponseEntity<Map<String, Object>> handleCatalogoDuplicado(CatalogoDuplicadoException ex) {
+        return buildErrorResponse(HttpStatus.CONFLICT, "Elemento de catálogo duplicado", ex.getMessage());
     }
 
     // Excepciones ResponseStatusException

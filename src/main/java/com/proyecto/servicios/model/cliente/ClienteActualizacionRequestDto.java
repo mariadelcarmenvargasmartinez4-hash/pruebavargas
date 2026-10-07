@@ -25,22 +25,22 @@ public class ClienteActualizacionRequestDto {
 
     // Datos Personales
     @Size(min = 2, max = 50, message = "El nombre debe tener entre 2 y 50 caracteres")
-    @Pattern(regexp = "^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ ]+$", message = "El nombre solo puede contener letras y espacios")
+    @Pattern(regexp = "^$|^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+( [a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+)*$", message = "El nombre no debe iniciar ni terminar con espacios ni contener espacios consecutivos, solo letras")
     @Schema(description = "Primer nombre", example = "Juan")
     private String nombre;
 
     @Size(max = 50, message = "El segundo nombre no puede exceder 50 caracteres")
-    @Pattern(regexp = "^$|^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ ]+$", message = "El segundo nombre solo puede contener letras y espacios")
+    @Pattern(regexp = "^$|^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+( [a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+)*$", message = "El segundo nombre no debe iniciar ni terminar con espacios ni contener espacios consecutivos, solo letras")
     @Schema(description = "Segundo nombre (opcional)", example = "Carlos")
     private String segundoNombre;
 
     @Size(min = 2, max = 50, message = "El apellido paterno debe tener entre 2 y 50 caracteres")
-    @Pattern(regexp = "^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ ]+$", message = "El apellido paterno solo puede contener letras y espacios")
+    @Pattern(regexp = "^$|^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+( [a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+)*$", message = "El apellido paterno no debe iniciar ni terminar con espacios ni contener espacios consecutivos, solo letras")
     @Schema(description = "Apellido paterno", example = "Perez")
     private String apellidoPaterno;
 
     @Size(min = 2, max = 50, message = "El apellido materno debe tener entre 2 y 50 caracteres")
-    @Pattern(regexp = "^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ ]+$", message = "El apellido materno solo puede contener letras y espacios")
+    @Pattern(regexp = "^$|^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+( [a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]+)*$", message = "El apellido materno no debe iniciar ni terminar con espacios ni contener espacios consecutivos, solo letras")
     @Schema(description = "Apellido materno", example = "Lopez")
     private String apellidoMaterno;
 
@@ -49,29 +49,29 @@ public class ClienteActualizacionRequestDto {
     @Schema(description = "Fecha de nacimiento (AAAA-MM-DD)", example = "1990-05-15")
     private LocalDate fechaNacimiento;
 
-    @Pattern(regexp = "^(MASCULINO|FEMENINO|OTRO)$", message = "El sexo debe ser MASCULINO, FEMENINO u OTRO")
-    @Schema(description = "Sexo del cliente", example = "MASCULINO")
+    @Size(max = 50, message = "El sexo no puede exceder 50 caracteres")
+    @Schema(description = "Sexo del cliente validado contra catálogo", example = "MASCULINO")
     private String sexo;
 
-    @Size(max = 50, message = "La nacionalidad no puede exceder 50 caracteres")
-    @Schema(description = "Nacionalidad", example = "Mexicana")
+    @Size(max = 100, message = "La nacionalidad no puede exceder 100 caracteres")
+    @Schema(description = "Nacionalidad validada contra catálogo", example = "Mexicana")
     private String nacionalidad;
 
-    @Pattern(regexp = "^(SOLTERO|CASADO|DIVORCIADO|VIUDO|UNION_LIBRE)$", message = "El estado civil no es valido")
-    @Schema(description = "Estado civil", example = "CASADO")
+    @Size(max = 50, message = "El estado civil no puede exceder 50 caracteres")
+    @Schema(description = "Estado civil validado contra catálogo", example = "CASADO")
     private String estadoCivil;
 
     // Datos de Contacto
-    @Email(message = "El formato de correo electronico es invalido")
-    @Size(max = 100, message = "El correo no puede exceder 100 caracteres")
+    @Email(message = "El formato de correo electrónico es inválido")
+    @Size(max = 100, message = "El correo electrónico no puede exceder 100 caracteres")
     @Schema(description = "Correo electrónico principal", example = "juan.perez.nuevo@example.com")
     private String correoElectronico;
 
-    @Pattern(regexp = "^\\d{10}$", message = "El telefono debe contener exactamente 10 digitos")
-    @Schema(description = "Teléfono móvil a 10 dígitos", example = "5599887766")
+    @Pattern(regexp = "^$|^\\d{10}$", message = "El teléfono móvil debe contener exactamente 10 dígitos numéricos")
+    @Schema(description = "Teléfono móvil a 10 dígitos numéricos", example = "5599887766")
     private String telefonoMovil;
 
-    @Pattern(regexp = "^$|^\\d{10,15}$", message = "El telefono alternativo debe ser numerico entre 10 y 15 digitos")
+    @Pattern(regexp = "^$|^\\d{10,15}$", message = "El teléfono alternativo debe ser numérico entre 10 y 15 dígitos")
     @Schema(description = "Teléfono alternativo (opcional)", example = "5511223344")
     private String telefonoAlternativo;
 
@@ -80,11 +80,11 @@ public class ClienteActualizacionRequestDto {
     @Schema(description = "Calle de domicilio", example = "Av. Insurgentes Sur")
     private String calle;
 
-    @Size(max = 20, message = "El numero exterior no puede exceder 20 caracteres")
+    @Size(max = 20, message = "El número exterior no puede exceder 20 caracteres")
     @Schema(description = "Número exterior", example = "456")
     private String numeroExterior;
 
-    @Size(max = 20, message = "El numero interior no puede exceder 20 caracteres")
+    @Size(max = 20, message = "El número interior no puede exceder 20 caracteres")
     @Schema(description = "Número interior (opcional)", example = "Piso 8")
     private String numeroInterior;
 
@@ -100,16 +100,16 @@ public class ClienteActualizacionRequestDto {
     @Schema(description = "Estado o entidad federativa", example = "Ciudad de Mexico")
     private String estado;
 
-    @Pattern(regexp = "^$|^\\d{5}$", message = "El codigo postal debe contener exactamente 5 digitos")
-    @Schema(description = "Código postal de 5 dígitos", example = "03100")
+    @Pattern(regexp = "^$|^\\d{5}$", message = "El código postal debe contener exactamente 5 dígitos numéricos")
+    @Schema(description = "Código postal de 5 dígitos numéricos", example = "03100")
     private String codigoPostal;
 
-    @Size(max = 50, message = "El pais no puede exceder 50 caracteres")
+    @Size(max = 50, message = "El país no puede exceder 50 caracteres")
     @Schema(description = "País de residencia", example = "Mexico")
     private String pais;
 
-    // Informacion Laboral
-    @Size(max = 100, message = "La ocupacion no puede exceder 100 caracteres")
+    // Información Laboral
+    @Size(max = 100, message = "La ocupación no puede exceder 100 caracteres")
     @Schema(description = "Ocupación o profesión", example = "Líder Técnico")
     private String ocupacion;
 
