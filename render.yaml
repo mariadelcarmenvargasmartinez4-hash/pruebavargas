@@ -1,0 +1,39 @@
+databases:
+  - name: db-prueba
+    databaseName: db_prueba
+    user: postgres
+    plan: free
+    region: oregon
+
+services:
+  - type: web
+    name: api-registro-clientes
+    runtime: docker
+    plan: free
+    region: oregon
+    branch: develop
+    envVars:
+      - key: PORT
+        value: "8088"
+      - key: DB_HOST
+        fromDatabase:
+          name: db-prueba
+          property: host
+      - key: DB_NAME
+        fromDatabase:
+          name: db-prueba
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: db-prueba
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: db-prueba
+          property: password
+      - key: SPRING_DATASOURCE_URL
+        fromDatabase:
+          name: db-prueba
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
