@@ -23,29 +23,34 @@ public class TextoNombreValidator implements ConstraintValidator<ValidTextoNombr
             return buildViolation(context, "El " + tipo + " es obligatorio y no debe estar vacio");
         }
 
-        // 1. Validar que no inicie ni termine con espacios en blanco
-        if (value.startsWith(" ") || value.endsWith(" ")) {
-            return buildViolation(context, "El " + tipo + " no debe iniciar ni terminar con espacios en blanco");
+        // 1. Validar que no inicie con espacios
+        if (value.startsWith(" ") || Character.isWhitespace(value.charAt(0))) {
+            return buildViolation(context, "El " + tipo + " no puede iniciar con espacios");
         }
 
-        // 2. Validar que no contenga multiples espacios internos consecutivos
+        // 2. Validar que no termine con espacios
+        if (value.endsWith(" ") || Character.isWhitespace(value.charAt(value.length() - 1))) {
+            return buildViolation(context, "El " + tipo + " no puede terminar con espacios");
+        }
+
+        // 3. Validar que no contenga multiples espacios internos consecutivos
         if (value.contains("  ")) {
             return buildViolation(context, "No se permiten multiples espacios internos consecutivos");
         }
 
-        // 3. Validar longitud minima de 2 caracteres reales
+        // 4. Validar longitud minima de 2 caracteres reales
         if (value.trim().length() < 2) {
             return buildViolation(context, "El " + tipo + " debe tener al menos 2 caracteres reales");
         }
 
-        // 4. Validar longitud maxima de 50 caracteres
+        // 5. Validar longitud maxima de 50 caracteres
         if (value.length() > 50) {
             return buildViolation(context, "El " + tipo + " no puede exceder 50 caracteres");
         }
 
-        // 5. Validar que solo contenga letras y espacios
+        // 6. Validar que solo contenga letras (y espacio simple entre palabras si aplica)
         if (!value.matches("^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ ]+$")) {
-            return buildViolation(context, "El " + tipo + " solo puede contener letras y espacios");
+            return buildViolation(context, "El " + tipo + " solo puede aceptar letras");
         }
 
         return true;
