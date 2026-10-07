@@ -29,7 +29,8 @@ import java.util.Map;
         basePackages = {
                 "com.proyecto.servicios.repositorys.sf",
                 "com.proyecto.servicios.repositorys.gestopago",
-                "com.proyecto.servicios.repositorys.cliente"
+                "com.proyecto.servicios.repositorys.cliente",
+                "com.proyecto.servicios.repositorys.catalogo"
         },
         transactionManagerRef = "sfTransactionManager",
         entityManagerFactoryRef = "sfEntityManagerFactory"
@@ -75,7 +76,8 @@ public class ConfigDB {
           em.setPackagesToScan(
                   "com.proyecto.servicios.entity.sf",
                   "com.proyecto.servicios.entity.gestopago",
-                  "com.proyecto.servicios.entity.cliente"
+                  "com.proyecto.servicios.entity.cliente",
+                  "com.proyecto.servicios.entity.catalogo"
           );
           em.setPersistenceUnitName("sfDatasource");
             HibernateJpaVendorAdapter vendorAdapter = new HibernateJpaVendorAdapter();

@@ -34,4 +34,4 @@ ENV PORT=8088
 EXPOSE 8088
 
 # Arranque de la aplicacion
-ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-Djava.security.egd=file:/dev/./urandom", "-jar", "app.jar"]
