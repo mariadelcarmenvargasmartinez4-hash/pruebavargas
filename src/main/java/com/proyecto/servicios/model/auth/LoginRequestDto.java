@@ -1,5 +1,6 @@
 package com.proyecto.servicios.model.auth;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -18,6 +19,7 @@ public class LoginRequestDto {
 
     @NotBlank(message = "El correo electrónico es obligatorio")
     @Email(message = "El formato de correo electrónico es inválido")
+    @JsonAlias({"correoElectronico", "email", "username"})
     @Schema(description = "Correo electrónico registrado como nombre de usuario", example = "juan.perez@example.com")
     private String correo;
 
