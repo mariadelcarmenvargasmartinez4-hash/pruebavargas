@@ -30,10 +30,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         String authorization = request.getHeader("Authorization");
-        if (authorization != null && authorization.startsWith("Bearer ")
-                && SecurityContextHolder.getContext().getAuthentication() == null) {
-            String token = authorization.substring(7);
-            if (jwtUtil.validarToken(token)) {
+        if (authorization != null && SecurityContextHolder.getContext().getAuthentication() == null) {
+            String token = authorization.trim();
+            if (token.regionMatches(true, 0, "Bearer ", 0, 7)) {
+                token = token.substring(7).trim();
+            }
+            if (token.regionMatches(true, 0, "Bearer ", 0, 7)) {
+                token = token.substring(7).trim();
+            }
+            if (!token.isBlank() && jwtUtil.validarToken(token)) {
                 String username = jwtUtil.extraerUsername(token);
                 usuarioRepository.findByUsername(username)
                         .filter(usuario -> Boolean.TRUE.equals(usuario.getActivo()))
