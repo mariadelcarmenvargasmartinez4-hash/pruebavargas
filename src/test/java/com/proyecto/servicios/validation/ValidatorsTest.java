@@ -52,6 +52,20 @@ public class ValidatorsTest {
     }
 
     @Test
+    void testNombre_PalabrasReservadas() {
+        ValidTextoNombre annotation = mock(ValidTextoNombre.class);
+        when(annotation.tipo()).thenReturn("nombre");
+        when(annotation.obligatorio()).thenReturn(true);
+        nombreValidator.initialize(annotation);
+
+        assertFalse(nombreValidator.isValid("execute", context));
+        assertFalse(nombreValidator.isValid("Si", context));
+        assertFalse(nombreValidator.isValid("No", context));
+        assertFalse(nombreValidator.isValid("SELECT", context));
+        assertTrue(nombreValidator.isValid("Carlos", context));
+    }
+
+    @Test
     void testNombre_LongitudMinimaReales() {
         ValidTextoNombre annotation = mock(ValidTextoNombre.class);
         when(annotation.tipo()).thenReturn("apellido");

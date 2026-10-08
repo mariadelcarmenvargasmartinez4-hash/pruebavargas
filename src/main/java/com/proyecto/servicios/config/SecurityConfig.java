@@ -38,7 +38,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/clientes", "/auth/login").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/catalogos/**", "/api/utilidades/**").permitAll()
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**", "/actuator/health").permitAll()
-                        .requestMatchers("/usuarios/**", "/api/catalogos/**").hasRole("ADMIN")
+                        .requestMatchers("/usuarios/**", "/api/catalogos/**").authenticated()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();

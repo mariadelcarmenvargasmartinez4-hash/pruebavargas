@@ -66,11 +66,11 @@ public class ClienteActualizacionRequestDto {
     @Schema(description = "Correo electrónico principal", example = "juan.perez.nuevo@example.com")
     private String correoElectronico;
 
-    @Pattern(regexp = "^$|^\\d{10}$", message = "El teléfono móvil debe contener exactamente 10 dígitos numéricos")
+    @Pattern(regexp = "^$|^\\d{10}$", message = "El teléfono móvil solo acepta 10 dígitos numéricos (sin guiones ni espacios)")
     @Schema(description = "Teléfono móvil a 10 dígitos numéricos", example = "5599887766")
     private String telefonoMovil;
 
-    @Pattern(regexp = "^$|^\\d{10,15}$", message = "El teléfono alternativo debe ser numérico entre 10 y 15 dígitos")
+    @Pattern(regexp = "^$|^\\d{10,15}$", message = "El teléfono alternativo solo acepta dígitos numéricos (entre 10 y 15 dígitos)")
     @Schema(description = "Teléfono alternativo (opcional)", example = "5511223344")
     private String telefonoAlternativo;
 
@@ -88,14 +88,17 @@ public class ClienteActualizacionRequestDto {
     private String numeroInterior;
 
     @Size(max = 100, message = "La colonia no puede exceder 100 caracteres")
+    @Pattern(regexp = "^$|^[a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ .'-]{2,100}$", message = "La colonia solo puede contener letras, números y espacios válidos")
     @Schema(description = "Colonia", example = "Del Valle")
     private String colonia;
 
     @Size(max = 100, message = "El municipio no puede exceder 100 caracteres")
+    @Pattern(regexp = "^$|^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ .'-]{2,100}$", message = "El municipio o alcaldía solo puede contener letras y espacios válidos")
     @Schema(description = "Municipio o alcaldía", example = "Benito Juarez")
     private String municipio;
 
     @Size(max = 50, message = "El estado no puede exceder 50 caracteres")
+    @Pattern(regexp = "^$|^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ .'-]{2,50}$", message = "El estado solo puede contener letras y espacios válidos")
     @Schema(description = "Estado o entidad federativa", example = "Ciudad de Mexico")
     private String estado;
 
@@ -104,6 +107,7 @@ public class ClienteActualizacionRequestDto {
     private String codigoPostal;
 
     @Size(max = 50, message = "El país no puede exceder 50 caracteres")
+    @Pattern(regexp = "^$|^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ .'-]{2,50}$", message = "El país solo puede contener letras y espacios válidos")
     @Schema(description = "País de residencia", example = "Mexico")
     private String pais;
 

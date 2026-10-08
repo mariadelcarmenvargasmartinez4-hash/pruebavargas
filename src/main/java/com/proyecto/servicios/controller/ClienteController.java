@@ -64,10 +64,14 @@ public class ClienteController {
             @Parameter(description = "Buscar cliente por CURP") @RequestParam(required = false) String curp,
             @Parameter(description = "Buscar cliente por RFC") @RequestParam(required = false) String rfc,
             @Parameter(description = "Buscar cliente por correo electrónico") @RequestParam(required = false) String correo,
+            @Parameter(description = "Buscar cliente por número de cuenta bancaria") @RequestParam(required = false) String numeroCuenta,
             @Parameter(description = "Consultar solo clientes activos (true/false)") @RequestParam(required = false) Boolean soloActivos,
             @Parameter(description = "Fecha inicio para rango de registro (AAAA-MM-DDTHH:mm:ss)") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime fechaInicio,
             @Parameter(description = "Fecha fin para rango de registro (AAAA-MM-DDTHH:mm:ss)") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime fechaFin) {
 
+        if (numeroCuenta != null && !numeroCuenta.isBlank()) {
+            return ResponseEntity.ok(List.of(clienteService.obtenerClientePorNumeroCuenta(numeroCuenta)));
+        }
         if (curp != null && !curp.isBlank()) {
             return ResponseEntity.ok(List.of(clienteService.obtenerClientePorCurp(curp)));
         }

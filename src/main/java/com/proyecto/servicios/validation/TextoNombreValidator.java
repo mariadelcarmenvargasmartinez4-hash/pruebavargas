@@ -8,6 +8,13 @@ public class TextoNombreValidator implements ConstraintValidator<ValidTextoNombr
     private String tipo;
     private boolean obligatorio;
 
+    private static final java.util.Set<String> PALABRAS_PROHIBIDAS = java.util.Set.of(
+            "EXECUTE", "EXEC", "SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "ALTER",
+            "CREATE", "TRUNCATE", "SCRIPT", "JAVASCRIPT", "NULL", "UNDEFINED", "TRUE",
+            "FALSE", "SI", "NO", "EVAL", "WHERE", "FROM", "TABLE", "JOIN", "UNION",
+            "GRANT", "REVOKE", "FETCH", "FUNCTION", "PROCEDURE", "DECLARE"
+    );
+
     @Override
     public void initialize(ValidTextoNombre constraintAnnotation) {
         this.tipo = constraintAnnotation.tipo();
@@ -51,6 +58,14 @@ public class TextoNombreValidator implements ConstraintValidator<ValidTextoNombr
         // 6. Validar que solo contenga letras (y espacio simple entre palabras si aplica)
         if (!value.matches("^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ ]+$")) {
             return buildViolation(context, "El " + tipo + " solo puede aceptar letras");
+        }
+
+        // 7. Validar que no contenga palabras reservadas o de programacion (execute, si, no, select, etc.)
+        String[] palabras = value.trim().split("\\s+");
+        for (String palabra : palabras) {
+            if (PALABRAS_PROHIBIDAS.contains(palabra.toUpperCase())) {
+                return buildViolation(context, "El " + tipo + " no puede ser una palabra reservada o de programacion ('" + palabra + "')");
+            }
         }
 
         return true;

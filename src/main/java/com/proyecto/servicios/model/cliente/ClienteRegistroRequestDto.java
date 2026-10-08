@@ -52,13 +52,13 @@ public class ClienteRegistroRequestDto {
     private LocalDate fechaNacimiento;
 
     @NotBlank(message = "El CURP es obligatorio y no debe estar vacío")
-    @Pattern(regexp = "^[A-Z]{4}\\d{6}[HM][A-Z]{5}[A-Z0-9]\\d$", message = "El CURP no cumple con el formato oficial de 18 caracteres alfanuméricos")
+    @Pattern(regexp = "^(?i)[A-Z]{4}\\d{6}[HM][A-Z]{5}[A-Z0-9]\\d$", message = "El CURP no cumple con el formato oficial de 18 caracteres (ejemplo: AAAA000000HAAAAA00)")
     @Size(min = 18, max = 18, message = "El CURP debe contener exactamente 18 caracteres")
     @Schema(description = "CURP oficial de 18 caracteres alfanuméricos", example = "PELJ900515HDFRPR09")
     private String curp;
 
     @NotBlank(message = "El RFC es obligatorio y no debe estar vacío")
-    @Pattern(regexp = "^[A-ZÑ&]{4}\\d{6}[A-Z0-9]{2,3}$", message = "El RFC no cumple con el formato oficial de 12 o 13 caracteres alfanuméricos")
+    @Pattern(regexp = "^(?i)[A-ZÑ&]{4}\\d{6}[A-Z0-9]{2,3}$", message = "El RFC no cumple con el formato oficial de 12 o 13 caracteres (ejemplo: AAAA000000AAA)")
     @Size(min = 12, max = 13, message = "El RFC debe tener exactamente 12 o 13 caracteres")
     @Schema(description = "RFC de persona física (12 o 13 caracteres)", example = "PELJ9005151A2")
     private String rfc;
@@ -86,11 +86,11 @@ public class ClienteRegistroRequestDto {
     private String correoElectronico;
 
     @NotBlank(message = "El teléfono móvil es obligatorio y no debe estar vacío")
-    @Pattern(regexp = "^\\d{10}$", message = "El teléfono móvil debe contener exactamente 10 dígitos numéricos")
+    @Pattern(regexp = "^\\d{10}$", message = "El teléfono móvil solo acepta 10 dígitos numéricos (sin guiones ni espacios)")
     @Schema(description = "Teléfono móvil a 10 dígitos numéricos", example = "5512345678")
     private String telefonoMovil;
 
-    @Pattern(regexp = "^$|^\\d{10,15}$", message = "El teléfono alternativo debe ser numérico entre 10 y 15 dígitos")
+    @Pattern(regexp = "^$|^\\d{10,15}$", message = "El teléfono alternativo solo acepta dígitos numéricos (entre 10 y 15 dígitos)")
     @Schema(description = "Teléfono alternativo (opcional)", example = "5587654321")
     private String telefonoAlternativo;
 
@@ -111,16 +111,19 @@ public class ClienteRegistroRequestDto {
 
     @NotBlank(message = "La colonia es obligatoria y no debe estar vacía")
     @Size(max = 100, message = "La colonia no puede exceder 100 caracteres")
+    @Pattern(regexp = "^[a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ .'-]{2,100}$", message = "La colonia solo puede contener letras, números y espacios válidos")
     @Schema(description = "Colonia", example = "Juarez")
     private String colonia;
 
     @NotBlank(message = "El municipio o alcaldía es obligatorio y no debe estar vacío")
     @Size(max = 100, message = "El municipio no puede exceder 100 caracteres")
+    @Pattern(regexp = "^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ .'-]{2,100}$", message = "El municipio o alcaldía solo puede contener letras y espacios válidos")
     @Schema(description = "Municipio o alcaldía", example = "Cuauhtemoc")
     private String municipio;
 
     @NotBlank(message = "El estado es obligatorio y no debe estar vacío")
     @Size(max = 50, message = "El estado no puede exceder 50 caracteres")
+    @Pattern(regexp = "^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ .'-]{2,50}$", message = "El estado solo puede contener letras y espacios válidos")
     @Schema(description = "Estado o entidad federativa", example = "Ciudad de Mexico")
     private String estado;
 
@@ -131,6 +134,7 @@ public class ClienteRegistroRequestDto {
 
     @NotBlank(message = "El país es obligatorio y no debe estar vacío")
     @Size(max = 50, message = "El país no puede exceder 50 caracteres")
+    @Pattern(regexp = "^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ .'-]{2,50}$", message = "El país solo puede contener letras y espacios válidos")
     @Schema(description = "País de residencia", example = "Mexico")
     private String pais;
 
@@ -160,6 +164,7 @@ public class ClienteRegistroRequestDto {
     @Schema(description = "Campo opcional; el sistema define el saldo inicial de la cuenta", example = "1000.00")
     private BigDecimal saldoInicial;
 
+    @Pattern(regexp = "^$|^(?i)(DEBITO|CREDITO|AHORRO|NOMINA|CHEQUES)$", message = "El tipo de cuenta debe ser DEBITO, CREDITO, AHORRO o NOMINA")
     @Schema(description = "Tipo de cuenta (opcional, default DEBITO)", example = "DEBITO")
     private String tipoCuenta;
 
