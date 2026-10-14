@@ -23,8 +23,10 @@ import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -38,14 +40,15 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Manejador global de excepciones estandarizado con GenericResponse y buenas prácticas.
- * Retorna siempre código HTTP 200 con el mensaje detonado correspondiente a la validación.
+ * Manejador global de excepciones centralizado con @RestControllerAdvice y @ExceptionHandler.
+ * Devuelve respuestas consistentes con GenericResponse, códigos de estado HTTP estándar (400, 401, 403, 404, 409, 500),
+ * mensajes descriptivos correspondientes a la validación detonada y oculta información interna del sistema.
  */
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    // 1. Manejo de errores de validación de campos (@Valid)
+    // 1. Manejo de errores de validación de campos (@Valid en petición)
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<GenericResponse<Object>> handleValidationExceptions(MethodArgumentNotValidException ex) {
         Map<String, String> errores = new LinkedHashMap<>();
@@ -53,28 +56,29 @@ public class GlobalExceptionHandler {
             errores.put(error.getField(), error.getDefaultMessage());
         }
 
-        // Obtener el mensaje específico detonado por la validación
+        // Obtener el mensaje específico detonado por la regla de validación
         String mensajeDetonado = ex.getBindingResult().getFieldErrors().stream()
                 .map(FieldError::getDefaultMessage)
                 .filter(Objects::nonNull)
                 .findFirst()
-                .orElse("Error de validacion de campos");
+                .orElse("Error de validación de campos");
 
-        log.warn("Validación detonada: {} -> Detalle: {}", mensajeDetonado, errores);
-        return ResponseEntity.ok(GenericResponse.error(200, mensajeDetonado, errores));
+        log.warn("Validación detonada (400 BAD REQUEST): {} -> Detalle: {}", mensajeDetonado, errores);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(GenericResponse.error(HttpStatus.BAD_REQUEST.value(), mensajeDetonado, errores));
     }
 
     // 2. Manejo de errores de malformación JSON o tipos incompatibles
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<GenericResponse<Object>> handleHttpMessageNotReadable(HttpMessageNotReadableException ex) {
-        String mensaje = "El cuerpo de la peticion contiene datos mal formados o con formato invalido";
+        String mensaje = "El cuerpo de la petición contiene datos mal formados o con formato inválido";
         Throwable cause = ex.getCause();
 
         if (cause instanceof JsonParseException) {
-            mensaje = "La sintaxis del JSON es invalida o esta incompleta (payload corrupto o conexion interrumpida)";
+            mensaje = "La sintaxis del JSON es inválida o está incompleta (payload corrupto o conexión interrumpida)";
         } else if (cause instanceof UnrecognizedPropertyException upe) {
             String campo = upe.getPropertyName();
-            mensaje = "El campo '" + campo + "' no es una propiedad permitida en la peticion (propiedad no reconocida)";
+            mensaje = "El campo '" + campo + "' no es una propiedad permitida en la petición (propiedad no reconocida)";
         } else if (cause instanceof InvalidFormatException ife) {
             String campo = ife.getPath().stream()
                     .map(JsonMappingException.Reference::getFieldName)
@@ -84,11 +88,11 @@ public class GlobalExceptionHandler {
 
             Class<?> targetType = ife.getTargetType();
             if (BigDecimal.class.isAssignableFrom(targetType) || Number.class.isAssignableFrom(targetType)) {
-                mensaje = "El campo '" + campo + "' debe ser un valor numerico decimal valido";
+                mensaje = "El campo '" + campo + "' debe ser un valor numérico decimal válido";
             } else if (LocalDate.class.isAssignableFrom(targetType)) {
-                mensaje = "El campo '" + campo + "' debe ser una fecha valida con formato AAAA-MM-DD";
+                mensaje = "El campo '" + campo + "' debe ser una fecha válida con formato AAAA-MM-DD";
             } else {
-                mensaje = "El campo '" + campo + "' contiene un tipo de dato invalido";
+                mensaje = "El campo '" + campo + "' contiene un tipo de dato inválido";
             }
         } else if (cause instanceof MismatchedInputException mie) {
             String campo = mie.getPath().stream()
@@ -99,25 +103,27 @@ public class GlobalExceptionHandler {
 
             Class<?> targetType = mie.getTargetType();
             if (BigDecimal.class.isAssignableFrom(targetType) || Number.class.isAssignableFrom(targetType)) {
-                mensaje = "El campo '" + campo + "' debe ser un valor numerico decimal valido";
+                mensaje = "El campo '" + campo + "' debe ser un valor numérico decimal válido";
             } else {
                 mensaje = "El campo '" + campo + "' no debe ser un arreglo u objeto";
             }
         }
 
-        log.warn("Error de lectura JSON capturado: {}", mensaje);
-        return ResponseEntity.ok(GenericResponse.error(200, mensaje));
+        log.warn("Error de lectura JSON capturado (400 BAD REQUEST): {}", mensaje);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(GenericResponse.error(HttpStatus.BAD_REQUEST.value(), mensaje));
     }
 
-    // 3. Manejo de valores numéricos gigantescos o violaciones de integridad
+    // 3. Manejo de valores numéricos gigantescos o violaciones de integridad en BD
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<GenericResponse<Object>> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
         String mensaje = "El valor proporcionado excede el límite máximo permitido o viola una restricción de integridad";
-        log.warn("Violacion de integridad de datos: {}", ex.getMessage());
-        return ResponseEntity.ok(GenericResponse.error(200, mensaje));
+        log.warn("Violación de integridad de datos (400 BAD REQUEST): {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(GenericResponse.error(HttpStatus.BAD_REQUEST.value(), mensaje));
     }
 
-    // 4. Manejo de violaciones de restricciones en parámetros
+    // 4. Manejo de violaciones de restricciones en parámetros (@Validated)
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<GenericResponse<Object>> handleConstraintViolation(ConstraintViolationException ex) {
         Map<String, String> errores = new LinkedHashMap<>();
@@ -130,93 +136,136 @@ public class GlobalExceptionHandler {
                 .map(ConstraintViolation::getMessage)
                 .filter(Objects::nonNull)
                 .findFirst()
-                .orElse("Error de validacion de campos");
+                .orElse("Error de validación de parámetros");
 
-        return ResponseEntity.ok(GenericResponse.error(200, mensajeDetonado, errores));
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(GenericResponse.error(HttpStatus.BAD_REQUEST.value(), mensajeDetonado, errores));
     }
 
-    // Excepciones de negocio personalizadas
-    @ExceptionHandler(CurpDuplicadaException.class)
-    public ResponseEntity<GenericResponse<Object>> handleCurpDuplicadaException(CurpDuplicadaException ex) {
-        return buildErrorResponse(ex.getMessage());
+    // 5. Manejo de control de acceso y autorización (Anti-IDOR)
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<GenericResponse<Object>> handleAccessDeniedException(AccessDeniedException ex) {
+        String mensaje = ex.getMessage() != null && !ex.getMessage().isBlank()
+                ? ex.getMessage()
+                : "Acceso denegado: No tiene permisos para consultar o manipular los datos de otro usuario";
+        log.warn("Acceso denegado (403 FORBIDDEN): {}", mensaje);
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(GenericResponse.error(HttpStatus.FORBIDDEN.value(), mensaje));
     }
 
-    @ExceptionHandler(RfcDuplicadoException.class)
-    public ResponseEntity<GenericResponse<Object>> handleRfcDuplicadoException(RfcDuplicadoException ex) {
-        return buildErrorResponse(ex.getMessage());
-    }
-
-    @ExceptionHandler(ClienteYaRegistradoException.class)
-    public ResponseEntity<GenericResponse<Object>> handleClienteYaRegistradoException(ClienteYaRegistradoException ex) {
-        return buildErrorResponse(ex.getMessage());
-    }
-
-    @ExceptionHandler(ClienteNoEncontradoException.class)
-    public ResponseEntity<GenericResponse<Object>> handleClienteNoEncontradoException(ClienteNoEncontradoException ex) {
-        return buildErrorResponse(ex.getMessage());
-    }
-
-    @ExceptionHandler(CuentaNoEncontradaException.class)
-    public ResponseEntity<GenericResponse<Object>> handleCuentaNoEncontradaException(CuentaNoEncontradaException ex) {
-        return buildErrorResponse(ex.getMessage());
-    }
-
+    // 6. Reglas de negocio y validaciones semánticas (400 BAD REQUEST)
     @ExceptionHandler(ReglaNegocioException.class)
     public ResponseEntity<GenericResponse<Object>> handleReglaNegocioException(ReglaNegocioException ex) {
-        return buildErrorResponse(ex.getMessage());
-    }
-
-    @ExceptionHandler(CredencialesInvalidasException.class)
-    public ResponseEntity<GenericResponse<Object>> handleCredencialesInvalidas(CredencialesInvalidasException ex) {
-        return buildErrorResponse(ex.getMessage());
-    }
-
-    @ExceptionHandler(UsuarioInactivoException.class)
-    public ResponseEntity<GenericResponse<Object>> handleUsuarioInactivo(UsuarioInactivoException ex) {
-        return buildErrorResponse(ex.getMessage());
-    }
-
-    @ExceptionHandler(UsuarioNoEncontradoException.class)
-    public ResponseEntity<GenericResponse<Object>> handleUsuarioNoEncontrado(UsuarioNoEncontradoException ex) {
-        return buildErrorResponse(ex.getMessage());
-    }
-
-    @ExceptionHandler(CorreoDuplicadoException.class)
-    public ResponseEntity<GenericResponse<Object>> handleCorreoDuplicado(CorreoDuplicadoException ex) {
-        return buildErrorResponse(ex.getMessage());
+        log.warn("Regla de negocio no satisfecha (400 BAD REQUEST): {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(GenericResponse.error(HttpStatus.BAD_REQUEST.value(), ex.getMessage()));
     }
 
     @ExceptionHandler(PasswordInvalidaException.class)
     public ResponseEntity<GenericResponse<Object>> handlePasswordInvalida(PasswordInvalidaException ex) {
-        return buildErrorResponse(ex.getMessage());
+        log.warn("Contraseña inválida (400 BAD REQUEST): {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(GenericResponse.error(HttpStatus.BAD_REQUEST.value(), ex.getMessage()));
+    }
+
+    // 7. Autenticación y credenciales (401 UNAUTHORIZED)
+    @ExceptionHandler(CredencialesInvalidasException.class)
+    public ResponseEntity<GenericResponse<Object>> handleCredencialesInvalidas(CredencialesInvalidasException ex) {
+        log.warn("Credenciales inválidas (401 UNAUTHORIZED): {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(GenericResponse.error(HttpStatus.UNAUTHORIZED.value(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(UsuarioInactivoException.class)
+    public ResponseEntity<GenericResponse<Object>> handleUsuarioInactivo(UsuarioInactivoException ex) {
+        log.warn("Usuario inactivo (403 FORBIDDEN): {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(GenericResponse.error(HttpStatus.FORBIDDEN.value(), ex.getMessage()));
+    }
+
+    // 8. Recursos no encontrados (404 NOT FOUND)
+    @ExceptionHandler(ClienteNoEncontradoException.class)
+    public ResponseEntity<GenericResponse<Object>> handleClienteNoEncontradoException(ClienteNoEncontradoException ex) {
+        log.warn("Cliente no encontrado (404 NOT FOUND): {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(GenericResponse.error(HttpStatus.NOT_FOUND.value(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(CuentaNoEncontradaException.class)
+    public ResponseEntity<GenericResponse<Object>> handleCuentaNoEncontradaException(CuentaNoEncontradaException ex) {
+        log.warn("Cuenta no encontrada (404 NOT FOUND): {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(GenericResponse.error(HttpStatus.NOT_FOUND.value(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(UsuarioNoEncontradoException.class)
+    public ResponseEntity<GenericResponse<Object>> handleUsuarioNoEncontrado(UsuarioNoEncontradoException ex) {
+        log.warn("Usuario no encontrado (404 NOT FOUND): {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(GenericResponse.error(HttpStatus.NOT_FOUND.value(), ex.getMessage()));
     }
 
     @ExceptionHandler(CatalogoNoEncontradoException.class)
     public ResponseEntity<GenericResponse<Object>> handleCatalogoNoEncontrado(CatalogoNoEncontradoException ex) {
-        return buildErrorResponse(ex.getMessage());
+        log.warn("Catálogo no encontrado (404 NOT FOUND): {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(GenericResponse.error(HttpStatus.NOT_FOUND.value(), ex.getMessage()));
+    }
+
+    // 9. Conflictos de duplicidad (409 CONFLICT)
+    @ExceptionHandler(CurpDuplicadaException.class)
+    public ResponseEntity<GenericResponse<Object>> handleCurpDuplicadaException(CurpDuplicadaException ex) {
+        log.warn("CURP duplicada (409 CONFLICT): {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(GenericResponse.error(HttpStatus.CONFLICT.value(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(RfcDuplicadoException.class)
+    public ResponseEntity<GenericResponse<Object>> handleRfcDuplicadoException(RfcDuplicadoException ex) {
+        log.warn("RFC duplicado (409 CONFLICT): {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(GenericResponse.error(HttpStatus.CONFLICT.value(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(CorreoDuplicadoException.class)
+    public ResponseEntity<GenericResponse<Object>> handleCorreoDuplicado(CorreoDuplicadoException ex) {
+        log.warn("Correo duplicado (409 CONFLICT): {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(GenericResponse.error(HttpStatus.CONFLICT.value(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(ClienteYaRegistradoException.class)
+    public ResponseEntity<GenericResponse<Object>> handleClienteYaRegistradoException(ClienteYaRegistradoException ex) {
+        log.warn("Cliente ya registrado (409 CONFLICT): {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(GenericResponse.error(HttpStatus.CONFLICT.value(), ex.getMessage()));
     }
 
     @ExceptionHandler(CatalogoDuplicadoException.class)
     public ResponseEntity<GenericResponse<Object>> handleCatalogoDuplicado(CatalogoDuplicadoException ex) {
-        return buildErrorResponse(ex.getMessage());
+        log.warn("Elemento de catálogo duplicado (409 CONFLICT): {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(GenericResponse.error(HttpStatus.CONFLICT.value(), ex.getMessage()));
     }
 
+    // 10. Respuestas con estado específico de Spring (ResponseStatusException)
     @ExceptionHandler(ResponseStatusException.class)
     public ResponseEntity<GenericResponse<Object>> handleResponseStatusException(ResponseStatusException ex) {
+        HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
+        if (status == null) {
+            status = HttpStatus.INTERNAL_SERVER_ERROR;
+        }
         String mensaje = ex.getReason() != null ? ex.getReason() : ex.getMessage();
-        return buildErrorResponse(mensaje);
+        log.warn("ResponseStatusException capturada ({}): {}", status, mensaje);
+        return ResponseEntity.status(status).body(GenericResponse.error(status.value(), mensaje));
     }
 
-    // Excepciones no controladas (fallback seguro)
+    // 11. Excepciones no controladas: Oculta detalles internos y evita fugas de información
     @ExceptionHandler(Exception.class)
     public ResponseEntity<GenericResponse<Object>> handleGeneralException(Exception ex) {
-        String mensaje = "Error interno en el servidor: " + ex.getMessage();
-        log.error("Excepcion no controlada: ", ex);
-        return buildErrorResponse(mensaje);
-    }
-
-    private ResponseEntity<GenericResponse<Object>> buildErrorResponse(String mensaje) {
-        log.warn("Respuesta de error [codigo: 200]: {}", mensaje);
-        return ResponseEntity.ok(GenericResponse.error(200, mensaje));
+        log.error("Excepción no controlada en el servidor (500 INTERNAL SERVER ERROR): ", ex);
+        String mensajeSeguro = "Ha ocurrido un error interno en el servidor. Por favor contacte al administrador.";
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(GenericResponse.error(HttpStatus.INTERNAL_SERVER_ERROR.value(), mensajeSeguro));
     }
 }

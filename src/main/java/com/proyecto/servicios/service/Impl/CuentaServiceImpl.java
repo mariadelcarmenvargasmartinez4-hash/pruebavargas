@@ -15,11 +15,14 @@ import com.proyecto.servicios.service.CuentaService;
 import com.proyecto.servicios.util.GeneradorCuentaBancariaUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.persistence.criteria.Predicate;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -107,25 +110,47 @@ public class CuentaServiceImpl implements CuentaService {
         if (!clienteRepository.existsById(clienteId)) {
             throw new ClienteNoEncontradoException("Cliente no encontrado con ID " + clienteId);
         }
-        return cuentaRepository.findByClienteId(clienteId).stream()
-                .map(this::mapearCuentaADto)
-                .collect(Collectors.toList());
+        return buscarCuentasDinamicas(null, clienteId, null, null);
     }
 
     // Consulta cuentas bancarias por estatus
     @Override
     @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
     public List<CuentaBancariaDto> obtenerCuentasPorEstatus(String estatus) {
-        return cuentaRepository.findByEstatusIgnoreCase(estatus.trim()).stream()
-                .map(this::mapearCuentaADto)
-                .collect(Collectors.toList());
+        return buscarCuentasDinamicas(null, null, estatus, null);
     }
 
     // Consulta cuentas bancarias activas
     @Override
     @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
     public List<CuentaBancariaDto> obtenerCuentasActivas() {
-        return cuentaRepository.findByEstatusIgnoreCaseOrderByIdDesc("ACTIVA").stream()
+        return buscarCuentasDinamicas(null, null, null, true);
+    }
+
+    // Búsqueda dinámica unificada de cuentas bancarias por filtros opcionales
+    @Override
+    @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
+    public List<CuentaBancariaDto> buscarCuentasDinamicas(String numeroCuenta, Long clienteId, String estatus, Boolean soloActivas) {
+        Specification<CuentaEntity> spec = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+
+            if (numeroCuenta != null && !numeroCuenta.isBlank()) {
+                predicates.add(cb.equal(root.get("numeroCuenta"), numeroCuenta.trim()));
+            }
+            if (clienteId != null) {
+                predicates.add(cb.equal(root.get("cliente").get("id"), clienteId));
+            }
+            if (estatus != null && !estatus.isBlank()) {
+                predicates.add(cb.equal(cb.upper(root.get("estatus")), estatus.trim().toUpperCase()));
+            }
+            if (Boolean.TRUE.equals(soloActivas)) {
+                predicates.add(cb.equal(cb.upper(root.get("estatus")), "ACTIVA"));
+            }
+
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+
+        return cuentaRepository.findAll(spec).stream()
                 .map(this::mapearCuentaADto)
                 .collect(Collectors.toList());
     }
@@ -159,6 +184,22 @@ public class CuentaServiceImpl implements CuentaService {
         String cuentaLimpia = numeroCuenta.trim();
         CuentaEntity cuenta = cuentaRepository.findByNumeroCuenta(cuentaLimpia)
                 .orElseThrow(() -> new CuentaNoEncontradaException("Cuenta bancaria no encontrada con numero " + cuentaLimpia));
+
+        // Regla: No se puede modificar una cuenta de un cliente dado de baja (inactivo)
+        if (!Boolean.TRUE.equals(cuenta.getCliente().getActivo())) {
+            throw new ReglaNegocioException("No se puede modificar una cuenta bancaria perteneciente a un cliente inactivo");
+        }
+
+        // Regla: No se puede modificar una cuenta cancelada
+        if ("CANCELADA".equalsIgnoreCase(cuenta.getEstatus())) {
+            throw new ReglaNegocioException("No se puede modificar una cuenta bancaria en estatus CANCELADA");
+        }
+
+        // Regla: No se puede modificar una cuenta inactiva sin reactivarla primero
+        if ("INACTIVA".equalsIgnoreCase(cuenta.getEstatus())
+                && (dto.getEstatus() == null || !"ACTIVA".equalsIgnoreCase(dto.getEstatus()))) {
+            throw new ReglaNegocioException("No se puede modificar una cuenta inactiva sin reactivarla primero a estatus ACTIVA");
+        }
 
         // Regla: No se puede activar una cuenta si el cliente esta inactivo
         if (dto.getEstatus() != null && dto.getEstatus().equalsIgnoreCase("ACTIVA")) {

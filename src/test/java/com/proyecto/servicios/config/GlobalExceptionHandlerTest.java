@@ -10,6 +10,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -34,7 +35,7 @@ public class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void testHandleValidationExceptions_Retorna200YMensajeDetonado() {
+    void testHandleValidationExceptions_Retorna400YMensajeDetonado() {
         MethodArgumentNotValidException ex = mock(MethodArgumentNotValidException.class);
         BindingResult bindingResult = mock(BindingResult.class);
 
@@ -47,10 +48,10 @@ public class GlobalExceptionHandlerTest {
 
         ResponseEntity<GenericResponse<Object>> response = exceptionHandler.handleValidationExceptions(ex);
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         GenericResponse<Object> body = response.getBody();
         assertNotNull(body);
-        assertEquals(200, body.getCodigo());
+        assertEquals(400, body.getCodigo());
         assertEquals("El nombre no puede iniciar con espacios", body.getMensaje());
 
         Map<String, String> errores = body.getErrores();
@@ -58,6 +59,19 @@ public class GlobalExceptionHandlerTest {
         assertEquals("El nombre no puede iniciar con espacios", errores.get("nombre"));
         assertEquals("No se permiten multiples espacios internos consecutivos", errores.get("segundoNombre"));
         assertEquals("El apellido debe tener al menos 2 caracteres reales", errores.get("apellidoMaterno"));
+    }
+
+    @Test
+    void testHandleAccessDeniedException_Retorna403() {
+        AccessDeniedException ex = new AccessDeniedException("Acceso denegado: No tiene permisos para consultar o manipular los datos de otro usuario");
+
+        ResponseEntity<GenericResponse<Object>> response = exceptionHandler.handleAccessDeniedException(ex);
+
+        assertEquals(HttpStatus.FORBIDDEN, response.getStatusCode());
+        GenericResponse<Object> body = response.getBody();
+        assertNotNull(body);
+        assertEquals(403, body.getCodigo());
+        assertTrue(body.getMensaje().contains("Acceso denegado"));
     }
 
     @Test
@@ -72,11 +86,11 @@ public class GlobalExceptionHandlerTest {
 
         ResponseEntity<GenericResponse<Object>> response = exceptionHandler.handleHttpMessageNotReadable(ex);
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         GenericResponse<Object> body = response.getBody();
         assertNotNull(body);
-        assertEquals(200, body.getCodigo());
-        assertEquals("El campo 'ingresoMensual' debe ser un valor numerico decimal valido", body.getMensaje());
+        assertEquals(400, body.getCodigo());
+        assertEquals("El campo 'ingresoMensual' debe ser un valor numérico decimal válido", body.getMensaje());
     }
 
     @Test
@@ -91,23 +105,23 @@ public class GlobalExceptionHandlerTest {
 
         ResponseEntity<GenericResponse<Object>> response = exceptionHandler.handleHttpMessageNotReadable(ex);
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         GenericResponse<Object> body = response.getBody();
         assertNotNull(body);
-        assertEquals(200, body.getCodigo());
+        assertEquals(400, body.getCodigo());
         assertEquals("El campo 'telefonoMovil' no debe ser un arreglo u objeto", body.getMensaje());
     }
 
     @Test
-    void testHandleDataIntegrityViolation_EvitaHttp500() {
+    void testHandleDataIntegrityViolation_Retorna400() {
         DataIntegrityViolationException ex = new DataIntegrityViolationException("NumericValueOutOfRange: A result was out of range");
 
         ResponseEntity<GenericResponse<Object>> response = exceptionHandler.handleDataIntegrityViolation(ex);
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         GenericResponse<Object> body = response.getBody();
         assertNotNull(body);
-        assertEquals(200, body.getCodigo());
+        assertEquals(400, body.getCodigo());
         assertTrue(body.getMensaje().contains("límite"));
     }
 
@@ -120,11 +134,11 @@ public class GlobalExceptionHandlerTest {
 
         ResponseEntity<GenericResponse<Object>> response = exceptionHandler.handleHttpMessageNotReadable(ex);
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         GenericResponse<Object> body = response.getBody();
         assertNotNull(body);
-        assertEquals(200, body.getCodigo());
-        assertEquals("El campo 'rol' no es una propiedad permitida en la peticion (propiedad no reconocida)", body.getMensaje());
+        assertEquals(400, body.getCodigo());
+        assertEquals("El campo 'rol' no es una propiedad permitida en la petición (propiedad no reconocida)", body.getMensaje());
     }
 
     @Test
@@ -135,10 +149,10 @@ public class GlobalExceptionHandlerTest {
 
         ResponseEntity<GenericResponse<Object>> response = exceptionHandler.handleHttpMessageNotReadable(ex);
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         GenericResponse<Object> body = response.getBody();
         assertNotNull(body);
-        assertEquals(200, body.getCodigo());
-        assertEquals("La sintaxis del JSON es invalida o esta incompleta (payload corrupto o conexion interrumpida)", body.getMensaje());
+        assertEquals(400, body.getCodigo());
+        assertEquals("La sintaxis del JSON es inválida o está incompleta (payload corrupto o conexión interrumpida)", body.getMensaje());
     }
 }

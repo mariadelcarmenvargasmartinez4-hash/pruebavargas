@@ -44,6 +44,12 @@ public interface ClienteService {
     // Consulta clientes registrados en un rango de fechas
     List<ClienteRegistroResponseDto> buscarClientesPorRangoFechas(LocalDateTime fechaInicio, LocalDateTime fechaFin);
 
+    // Búsqueda dinámica unificada por filtros opcionales combinables
+    List<ClienteRegistroResponseDto> buscarClientesDinamicos(
+            String nombre, String apellidoPaterno, String apellidoMaterno,
+            String curp, String rfc, String correo, String numeroCuenta,
+            Boolean soloActivos, LocalDateTime fechaInicio, LocalDateTime fechaFin);
+
     // Actualizacion parcial de datos personales, contacto, domicilio y laboral
     ClienteRegistroResponseDto actualizarCliente(Long id, ClienteActualizacionRequestDto requestDto);
 

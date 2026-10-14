@@ -2,6 +2,7 @@ package com.proyecto.servicios.repositorys.cliente;
 
 import com.proyecto.servicios.entity.cliente.ClienteEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -12,7 +13,7 @@ import java.util.Optional;
 
 // Repositorio JPA para operaciones con la entidad ClienteEntity
 @Repository
-public interface ClienteRepository extends JpaRepository<ClienteEntity, Long> {
+public interface ClienteRepository extends JpaRepository<ClienteEntity, Long>, JpaSpecificationExecutor<ClienteEntity> {
 
     boolean existsByCurp(String curp);
 

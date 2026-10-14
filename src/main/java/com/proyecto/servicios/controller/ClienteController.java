@@ -4,6 +4,7 @@ import com.proyecto.servicios.model.cliente.ClienteActualizacionRequestDto;
 import com.proyecto.servicios.model.cliente.ClienteRegistroRequestDto;
 import com.proyecto.servicios.model.cliente.ClienteRegistroResponseDto;
 import com.proyecto.servicios.service.ClienteService;
+import com.proyecto.servicios.security.SecurityService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -31,14 +32,16 @@ import java.util.List;
 // Controlador REST para la gestion de clientes personas fisicas
 @RestController
 @RequestMapping("/clientes")
-@Tag(name = "Clientes", description = "Operaciones de registro, consultas con filtros, actualización parcial y baja lógica de clientes")
+@Tag(name = "Clientes", description = "Operaciones de registro, consultas dinámicas con filtros combinables, actualización y baja lógica de clientes")
 public class ClienteController {
 
     private final ClienteService clienteService;
+    private final SecurityService securityService;
 
     // Inyeccion de dependencias por constructor
-    public ClienteController(ClienteService clienteService) {
+    public ClienteController(ClienteService clienteService, SecurityService securityService) {
         this.clienteService = clienteService;
+        this.securityService = securityService;
     }
 
     // Registrar un nuevo cliente persona fisica
@@ -54,9 +57,10 @@ public class ClienteController {
         return ResponseEntity.status(HttpStatus.CREATED).body(respuesta);
     }
 
-    // Consultar todos los clientes o filtrar por nombre, apellidoPaterno, apellidoMaterno, curp, rfc o estatus activo
+    // Consultar clientes mediante búsqueda dinámica unificada con filtros opcionales
     @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
-    @Operation(summary = "Consultar clientes con filtros opcionales", description = "Permite consultar todos los clientes o aplicar filtros por nombre, apellido paterno, apellido materno, curp, rfc, correo o estatus activo")
+    @Operation(summary = "Consultar clientes con filtros dinámicos opcionales", 
+               description = "Permite realizar búsquedas dinámicas combinando filtros opcionales por nombre, apellidos, CURP, RFC, correo, número de cuenta, rango de fechas y estatus activo sin duplicidad")
     public ResponseEntity<List<ClienteRegistroResponseDto>> consultarClientes(
             @Parameter(description = "Filtrar por nombre") @RequestParam(required = false) String nombre,
             @Parameter(description = "Filtrar por apellido paterno") @RequestParam(required = false) String apellidoPaterno,
@@ -69,62 +73,41 @@ public class ClienteController {
             @Parameter(description = "Fecha inicio para rango de registro (AAAA-MM-DDTHH:mm:ss)") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime fechaInicio,
             @Parameter(description = "Fecha fin para rango de registro (AAAA-MM-DDTHH:mm:ss)") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime fechaFin) {
 
-        if (numeroCuenta != null && !numeroCuenta.isBlank()) {
-            return ResponseEntity.ok(List.of(clienteService.obtenerClientePorNumeroCuenta(numeroCuenta)));
-        }
-        if (curp != null && !curp.isBlank()) {
-            return ResponseEntity.ok(List.of(clienteService.obtenerClientePorCurp(curp)));
-        }
-        if (rfc != null && !rfc.isBlank()) {
-            return ResponseEntity.ok(List.of(clienteService.obtenerClientePorRfc(rfc)));
-        }
-        if (correo != null && !correo.isBlank()) {
-            return ResponseEntity.ok(List.of(clienteService.obtenerClientePorCorreo(correo)));
-        }
-        if (nombre != null && !nombre.isBlank()) {
-            return ResponseEntity.ok(clienteService.buscarClientesPorNombre(nombre));
-        }
-        if (apellidoPaterno != null && !apellidoPaterno.isBlank()) {
-            return ResponseEntity.ok(clienteService.buscarClientesPorApellidoPaterno(apellidoPaterno));
-        }
-        if (apellidoMaterno != null && !apellidoMaterno.isBlank()) {
-            return ResponseEntity.ok(clienteService.buscarClientesPorApellidoMaterno(apellidoMaterno));
-        }
-        if (fechaInicio != null && fechaFin != null) {
-            return ResponseEntity.ok(clienteService.buscarClientesPorRangoFechas(fechaInicio, fechaFin));
-        }
-        if (Boolean.TRUE.equals(soloActivos)) {
-            return ResponseEntity.ok(clienteService.listarClientesActivos());
-        }
-
-        return ResponseEntity.ok(clienteService.listarClientes());
+        List<ClienteRegistroResponseDto> resultados = clienteService.buscarClientesDinamicos(
+                nombre, apellidoPaterno, apellidoMaterno, curp, rfc, correo, numeroCuenta, soloActivos, fechaInicio, fechaFin);
+        return ResponseEntity.ok(resultados);
     }
 
-    // Consultar un cliente por su identificador
+    // Consultar un cliente por su identificador (con control de autorización IDOR)
     @GetMapping(value = "/{id}", produces = MediaType.APPLICATION_JSON_VALUE)
-    @Operation(summary = "Consultar un cliente por su identificador", description = "Obtiene los detalles del cliente, su domicilio y sus cuentas asociadas")
+    @Operation(summary = "Consultar un cliente por su identificador", description = "Obtiene los detalles del cliente autenticado. Valida permisos para prevenir acceso a otros usuarios (IDOR).")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Cliente encontrado"),
+            @ApiResponse(responseCode = "403", description = "Acceso denegado: sin permisos para ver otro cliente"),
             @ApiResponse(responseCode = "404", description = "Cliente no encontrado")
     })
-    public ResponseEntity<ClienteRegistroResponseDto> obtenerClientePorId(@Parameter(description = "Identificador del cliente", example = "1") @PathVariable Long id) {
+    public ResponseEntity<ClienteRegistroResponseDto> obtenerClientePorId(
+            @Parameter(description = "Identificador del cliente", example = "1") @PathVariable Long id) {
+        securityService.validarAccesoCliente(id);
         return ResponseEntity.ok(clienteService.obtenerClientePorId(id));
     }
 
-    // Actualizar parcialmente la información de un cliente (Patch / Put)
+    // Actualizar parcialmente la información de un cliente (Patch / Put con control de autorización IDOR)
     @PatchMapping(value = "/{id}", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-    @Operation(summary = "Actualizar parcialmente la información de un cliente", description = "Permite modificar datos personales, de contacto, domicilio e información laboral. No permite modificar CURP ni RFC.")
+    @Operation(summary = "Actualizar parcialmente la información de un cliente", description = "Permite modificar datos de contacto, domicilio e información laboral. Valida permisos de autorización IDOR y estado activo.")
     public ResponseEntity<ClienteRegistroResponseDto> actualizarParcialCliente(
             @Parameter(description = "Identificador del cliente", example = "1") @PathVariable Long id,
             @Valid @RequestBody ClienteActualizacionRequestDto requestDto) {
+        securityService.validarAccesoCliente(id);
         return ResponseEntity.ok(clienteService.actualizarCliente(id, requestDto));
     }
 
     @PutMapping(value = "/{id}", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-    @Operation(summary = "Actualizar información de un cliente", description = "Método PUT para actualizar datos de un cliente manteniendo CURP y RFC inmutables")
+    @Operation(summary = "Actualizar información de un cliente", description = "Método PUT para actualizar datos de un cliente manteniendo CURP y RFC inmutables. Valida autorización IDOR y estado activo.")
     public ResponseEntity<ClienteRegistroResponseDto> actualizarCliente(
             @Parameter(description = "Identificador del cliente", example = "1") @PathVariable Long id,
             @Valid @RequestBody ClienteActualizacionRequestDto requestDto) {
+        securityService.validarAccesoCliente(id);
         return ResponseEntity.ok(clienteService.actualizarCliente(id, requestDto));
     }
 
@@ -133,9 +116,11 @@ public class ClienteController {
     @Operation(summary = "Baja lógica de cliente", description = "Desactiva el cliente y sus cuentas bancarias sin eliminar físicamente el registro en base de datos")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "204", description = "Cliente desactivado exitosamente"),
+            @ApiResponse(responseCode = "403", description = "Acceso denegado"),
             @ApiResponse(responseCode = "404", description = "Cliente no encontrado")
     })
     public ResponseEntity<Void> desactivarCliente(@Parameter(description = "Identificador del cliente a desactivar", example = "1") @PathVariable Long id) {
+        securityService.validarAccesoCliente(id);
         clienteService.desactivarCliente(id);
         return ResponseEntity.noContent().build();
     }
@@ -144,6 +129,7 @@ public class ClienteController {
     @PostMapping(value = "/{id}/reactivar", produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(summary = "Reactivar cliente", description = "Vuelve a activar un cliente previamente desactivado")
     public ResponseEntity<ClienteRegistroResponseDto> reactivarCliente(@Parameter(description = "Identificador del cliente a reactivar", example = "1") @PathVariable Long id) {
+        securityService.validarAccesoCliente(id);
         return ResponseEntity.ok(clienteService.reactivarCliente(id));
     }
 }

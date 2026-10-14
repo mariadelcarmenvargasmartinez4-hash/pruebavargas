@@ -28,6 +28,9 @@ public interface CuentaService {
     // Consulta saldo disponible de una cuenta
     SaldoCuentaDto obtenerSaldoCuenta(String numeroCuenta);
 
+    // Búsqueda dinámica unificada de cuentas bancarias por filtros opcionales
+    List<CuentaBancariaDto> buscarCuentasDinamicas(String numeroCuenta, Long clienteId, String estatus, Boolean soloActivas);
+
     // Actualizacion parcial de una cuenta (saldo, estatus, tipo) sin modificar numero de cuenta
     CuentaBancariaDto actualizarCuenta(String numeroCuenta, CuentaActualizacionRequestDto requestDto);
 }

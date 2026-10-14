@@ -29,14 +29,18 @@ import com.proyecto.servicios.util.GeneradorCuentaBancariaUtil;
 import com.proyecto.servicios.util.MetricasTextoUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.persistence.criteria.Join;
+import jakarta.persistence.criteria.JoinType;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Period;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Predicate;
@@ -227,12 +231,69 @@ public class ClienteServiceImpl implements ClienteService {
     }
 
     @Override
+    @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
+    public List<ClienteRegistroResponseDto> buscarClientesDinamicos(
+            String nombre, String apellidoPaterno, String apellidoMaterno,
+            String curp, String rfc, String correo, String numeroCuenta,
+            Boolean soloActivos, LocalDateTime fechaInicio, LocalDateTime fechaFin) {
+
+        Specification<ClienteEntity> spec = (root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+
+            if (nombre != null && !nombre.isBlank()) {
+                predicates.add(cb.like(cb.lower(root.get("nombre")), "%" + nombre.trim().toLowerCase() + "%"));
+            }
+            if (apellidoPaterno != null && !apellidoPaterno.isBlank()) {
+                predicates.add(cb.like(cb.lower(root.get("apellidoPaterno")), "%" + apellidoPaterno.trim().toLowerCase() + "%"));
+            }
+            if (apellidoMaterno != null && !apellidoMaterno.isBlank()) {
+                predicates.add(cb.like(cb.lower(root.get("apellidoMaterno")), "%" + apellidoMaterno.trim().toLowerCase() + "%"));
+            }
+            if (curp != null && !curp.isBlank()) {
+                predicates.add(cb.equal(cb.upper(root.get("curp")), curp.trim().toUpperCase()));
+            }
+            if (rfc != null && !rfc.isBlank()) {
+                predicates.add(cb.equal(cb.upper(root.get("rfc")), rfc.trim().toUpperCase()));
+            }
+            if (correo != null && !correo.isBlank()) {
+                predicates.add(cb.equal(cb.lower(root.get("correoElectronico")), correo.trim().toLowerCase()));
+            }
+            if (numeroCuenta != null && !numeroCuenta.isBlank()) {
+                Join<ClienteEntity, CuentaEntity> cuentasJoin = root.join("cuentas", JoinType.INNER);
+                predicates.add(cb.equal(cuentasJoin.get("numeroCuenta"), numeroCuenta.trim()));
+            }
+            if (Boolean.TRUE.equals(soloActivos)) {
+                predicates.add(cb.isTrue(root.get("activo")));
+            }
+            if (fechaInicio != null && fechaFin != null) {
+                predicates.add(cb.between(root.get("fechaCreacion"), fechaInicio, fechaFin));
+            } else if (fechaInicio != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("fechaCreacion"), fechaInicio));
+            } else if (fechaFin != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("fechaCreacion"), fechaFin));
+            }
+
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+
+        return clienteRepository.findAll(spec).stream()
+                .distinct()
+                .map(this::construirRespuestaCompleta)
+                .collect(Collectors.toList());
+    }
+
+    @Override
     @Transactional(transactionManager = "sfTransactionManager")
     public ClienteRegistroResponseDto actualizarCliente(Long id, ClienteActualizacionRequestDto dto) {
         log.info("Iniciando actualización de cliente con ID: {}", id);
 
         ClienteEntity cliente = clienteRepository.findById(id)
                 .orElseThrow(() -> new ClienteNoEncontradoException("Cliente no encontrado con ID " + id));
+
+        // Regla: No se permite modificar información de clientes dados de baja
+        if (!Boolean.TRUE.equals(cliente.getActivo())) {
+            throw new ReglaNegocioException("No se puede modificar la información de un cliente que ha sido dado de baja (inactivo)");
+        }
 
         actualizarDatosPersonales(cliente, dto);
         actualizarDatosContacto(cliente, dto);
@@ -251,6 +312,11 @@ public class ClienteServiceImpl implements ClienteService {
 
         ClienteEntity cliente = clienteRepository.findById(id)
                 .orElseThrow(() -> new ClienteNoEncontradoException("Cliente no encontrado con ID " + id));
+
+        // Regla: Validar que no se encuentre ya dado de baja
+        if (!Boolean.TRUE.equals(cliente.getActivo())) {
+            throw new ReglaNegocioException("El cliente con ID " + id + " ya se encuentra dado de baja (inactivo)");
+        }
 
         cliente.setActivo(false);
         clienteRepository.save(cliente);
@@ -275,6 +341,11 @@ public class ClienteServiceImpl implements ClienteService {
 
         ClienteEntity cliente = clienteRepository.findById(id)
                 .orElseThrow(() -> new ClienteNoEncontradoException("Cliente no encontrado con ID " + id));
+
+        // Regla: Validar si ya está activo
+        if (Boolean.TRUE.equals(cliente.getActivo())) {
+            throw new ReglaNegocioException("El cliente con ID " + id + " ya se encuentra activo");
+        }
 
         cliente.setActivo(true);
         clienteRepository.save(cliente);
