@@ -20,8 +20,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
-
 @RestController
 @RequestMapping("/api/catalogos/estados-civiles")
 @Tag(name = "Catálogo de Estados Civiles", description = "API dedicada para la administración y consulta desacoplada del catálogo de estados civiles")

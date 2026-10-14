@@ -7,7 +7,6 @@ import com.proyecto.servicios.service.PersonaService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -15,30 +14,27 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.awt.*;
-
 @RestController
 public class PersonaController {
 
+    private final PersonaService personaService;
 
-    @Autowired
-    private PersonaService personaService;
-
-
-    @PostMapping(value = "/personas",produces =MediaType.APPLICATION_JSON_VALUE,consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<GenericResponse> crearUser(@Valid @RequestBody PersonasRequest personasRequest){
-
-        return new ResponseEntity<>(personaService.creaPersona(personasRequest), HttpStatus.OK);
+    public PersonaController(PersonaService personaService) {
+        this.personaService = personaService;
     }
 
-    @PutMapping(value = "/personasActualiza", produces =MediaType.APPLICATION_JSON_VALUE, consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<GenericResponse> actualizUser(@Valid @RequestBody PersonasRequest personasRequest){
-
-        return new ResponseEntity<>(personaService.actualizaPersona(personasRequest), HttpStatus.OK);
+    @PostMapping(value = "/personas", produces = MediaType.APPLICATION_JSON_VALUE, consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<GenericResponse> crearPersona(@Valid @RequestBody PersonasRequest personasRequest) {
+        return ResponseEntity.ok(personaService.creaPersona(personasRequest));
     }
-    @PutMapping(value = "/personasElimina", produces =MediaType.APPLICATION_JSON_VALUE, consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<GenericResponse> actualizUser(@Valid @RequestBody EliminaPersonaRequest personasRequest){
 
-        return new ResponseEntity<>(personaService.eliminaPersona(personasRequest), HttpStatus.OK);
+    @PutMapping(value = "/personasActualiza", produces = MediaType.APPLICATION_JSON_VALUE, consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<GenericResponse> actualizarPersona(@Valid @RequestBody PersonasRequest personasRequest) {
+        return ResponseEntity.ok(personaService.actualizaPersona(personasRequest));
+    }
+
+    @PutMapping(value = "/personasElimina", produces = MediaType.APPLICATION_JSON_VALUE, consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<GenericResponse> eliminarPersona(@Valid @RequestBody EliminaPersonaRequest personasRequest) {
+        return ResponseEntity.ok(personaService.eliminaPersona(personasRequest));
     }
 }

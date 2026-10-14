@@ -1,9 +1,7 @@
 package com.proyecto.servicios.security;
 
 import com.proyecto.servicios.entity.cliente.ClienteEntity;
-import com.proyecto.servicios.entity.cliente.CuentaEntity;
 import com.proyecto.servicios.entity.cliente.UsuarioAccesoEntity;
-import com.proyecto.servicios.repositorys.cliente.ClienteRepository;
 import com.proyecto.servicios.repositorys.cliente.CuentaRepository;
 import com.proyecto.servicios.repositorys.cliente.UsuarioAccesoRepository;
 import com.proyecto.servicios.util.DeclarativeAssertUtil;
@@ -25,14 +23,11 @@ public class SecurityService {
 
     private final UsuarioAccesoRepository usuarioRepository;
     private final CuentaRepository cuentaRepository;
-    private final ClienteRepository clienteRepository;
 
     public SecurityService(UsuarioAccesoRepository usuarioRepository,
-                           CuentaRepository cuentaRepository,
-                           ClienteRepository clienteRepository) {
+                           CuentaRepository cuentaRepository) {
         this.usuarioRepository = usuarioRepository;
         this.cuentaRepository = cuentaRepository;
-        this.clienteRepository = clienteRepository;
     }
 
     public void validarAccesoCliente(Long clienteId) {

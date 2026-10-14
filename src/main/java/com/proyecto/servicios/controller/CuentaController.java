@@ -7,8 +7,8 @@ import com.proyecto.servicios.model.cuenta.CuentaActualizacionRequestDto;
 import com.proyecto.servicios.model.cuenta.CuentaConsultaFiltroRecord;
 import com.proyecto.servicios.model.cuenta.CuentaCreacionRequestDto;
 import com.proyecto.servicios.model.cuenta.SaldoCuentaDto;
-import com.proyecto.servicios.service.CuentaService;
 import com.proyecto.servicios.security.SecurityService;
+import com.proyecto.servicios.service.CuentaService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -30,8 +30,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Optional;
-
-import java.util.List;
+import java.util.function.Predicate;
 
 // Controlador REST para la gestion de cuentas bancarias
 @RestController
@@ -78,7 +77,7 @@ public class CuentaController {
             @Parameter(description = "Estatus de la cuenta (ACTIVA, INACTIVA, BLOQUEADA, CANCELADA)") @RequestParam(required = false) String estatus,
             @Parameter(description = "Listar solo cuentas activas (true/false)") @RequestParam(required = false) Boolean soloActivas) {
 
-        Optional.ofNullable(numeroCuenta).filter(java.util.function.Predicate.not(String::isBlank)).ifPresent(securityService::validarAccesoCuenta);
+        Optional.ofNullable(numeroCuenta).filter(Predicate.not(String::isBlank)).ifPresent(securityService::validarAccesoCuenta);
         Optional.ofNullable(clienteId).ifPresent(securityService::validarAccesoCliente);
 
         CuentaConsultaFiltroRecord filtro = new CuentaConsultaFiltroRecord(

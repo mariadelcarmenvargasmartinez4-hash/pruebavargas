@@ -8,7 +8,6 @@ import com.proyecto.servicios.exception.ClienteNoEncontradoException;
 import com.proyecto.servicios.exception.CurpDuplicadaException;
 import com.proyecto.servicios.exception.ReglaNegocioException;
 import com.proyecto.servicios.exception.RfcDuplicadoException;
-import com.proyecto.servicios.model.cliente.ClienteActualizacionRequestDto;
 import com.proyecto.servicios.model.cliente.ClienteRegistroRequestDto;
 import com.proyecto.servicios.model.cliente.ClienteRegistroResponseDto;
 import com.proyecto.servicios.model.util.MetricasTextoDto;

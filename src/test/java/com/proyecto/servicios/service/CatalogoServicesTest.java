@@ -1,7 +1,6 @@
 package com.proyecto.servicios.service;
 
 import com.proyecto.servicios.entity.catalogo.EstadoCivilEntity;
-import com.proyecto.servicios.entity.catalogo.NacionalidadEntity;
 import com.proyecto.servicios.entity.catalogo.SexoEntity;
 import com.proyecto.servicios.exception.CatalogoDuplicadoException;
 import com.proyecto.servicios.exception.CatalogoNoEncontradoException;
