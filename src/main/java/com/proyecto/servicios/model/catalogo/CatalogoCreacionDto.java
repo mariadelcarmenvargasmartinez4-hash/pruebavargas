@@ -27,4 +27,9 @@ public class CatalogoCreacionDto {
     @Pattern(regexp = "^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ0-9]+( [a-zA-ZáéíóúÁÉÍÓÚñÑüÜ0-9]+)*$", message = "La descripción no debe iniciar ni terminar con espacios ni tener espacios consecutivos")
     @Schema(description = "Descripción o nombre del elemento", example = "MEXICANA")
     private String descripcion;
+
+    public CatalogoCreacionRecord toRecord() {
+        return CatalogoCreacionRecord.de(this);
+    }
 }
+

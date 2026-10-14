@@ -46,27 +46,26 @@ public class GestoPagoTokenServiceImpl implements GestoPagoTokenService {
             GestoPagoAuthResponse response = gestoPagoAuthClient.authenticate(
                     idDistribuidor, codigoDispositivo, password);
 
-            if (response == null || response.getToken() == null) {
-                log.error("La respuesta de GestoPago no contiene token");
-                return;
-            }
+            Optional.ofNullable(response)
+                    .map(GestoPagoAuthResponse::getToken)
+                    .ifPresentOrElse(tok -> {
+                        GestoPagoToken tokenEntity = tokenRepository
+                                .findByIdDistribuidorAndCodigoDispositivo(idDistribuidor, codigoDispositivo)
+                                .map(existing -> {
+                                    tokenMapper.updateEntity(response, existing);
+                                    return existing;
+                                })
+                                .orElseGet(() -> {
+                                    GestoPagoToken nuevo = tokenMapper.toEntity(response);
+                                    nuevo.setIdDistribuidor(idDistribuidor);
+                                    nuevo.setCodigoDispositivo(codigoDispositivo);
+                                    nuevo.setActivo(true);
+                                    return nuevo;
+                                });
 
-            GestoPagoToken tokenEntity = tokenRepository
-                    .findByIdDistribuidorAndCodigoDispositivo(idDistribuidor, codigoDispositivo)
-                    .map(existing -> {
-                        tokenMapper.updateEntity(response, existing);
-                        return existing;
-                    })
-                    .orElseGet(() -> {
-                        GestoPagoToken nuevo = tokenMapper.toEntity(response);
-                        nuevo.setIdDistribuidor(idDistribuidor);
-                        nuevo.setCodigoDispositivo(codigoDispositivo);
-                        nuevo.setActivo(true);
-                        return nuevo;
-                    });
-
-            tokenRepository.save(tokenEntity);
-            log.info("Token GestoPago renovado correctamente");
+                        tokenRepository.save(tokenEntity);
+                        log.info("Token GestoPago renovado correctamente");
+                    }, () -> log.error("La respuesta de GestoPago no contiene token"));
 
         } catch (Exception e) {
             log.error("Error al renovar token GestoPago: {}", e.getMessage(), e);

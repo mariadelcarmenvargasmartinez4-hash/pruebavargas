@@ -56,6 +56,7 @@ public class ClienteController {
             @ApiResponse(responseCode = "409", description = "CURP, RFC o correo electrónico duplicado")
     })
     public ResponseEntity<ClienteRegistroResponseDto> registrarCliente(@Valid @RequestBody ClienteRegistroRequestDto requestDto) {
+        requestDto.toRecord(); // Validación temprana Fail-Fast en Record
         ClienteRegistroResponseDto respuesta = clienteService.registrarCliente(requestDto);
         return ResponseEntity.status(HttpStatus.CREATED).body(respuesta);
     }
@@ -65,6 +66,7 @@ public class ClienteController {
     @Operation(summary = "Consultar clientes con filtros dinámicos y paginación", 
                description = "Búsqueda dinámica paginada de clientes. Permite manipular el número de página (pack/page) y el tamaño de página (size)")
     public ResponseEntity<GenericResponse<PaginaResponseRecord<ClienteRegistroResponseDto>>> consultarClientes(
+            @Parameter(description = "Número de pack de registros solicitado (alias nativo de página)", example = "0") @RequestParam(value = "pack", required = false) Integer pack,
             @Parameter(description = "Número de página/pack (inicia en 0)", example = "0") @RequestParam(defaultValue = "0") int page,
             @Parameter(description = "Cantidad de elementos por página (tamaño)", example = "10") @RequestParam(defaultValue = "10") int size,
             @Parameter(description = "Campo de ordenación", example = "id") @RequestParam(defaultValue = "id") String sortBy,
@@ -81,7 +83,7 @@ public class ClienteController {
             @Parameter(description = "Fecha fin para rango de registro (AAAA-MM-DDTHH:mm:ss)") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime fechaFin) {
 
         ClienteConsultaFiltroRecord filtro = new ClienteConsultaFiltroRecord(
-                nombre, apellidoPaterno, apellidoMaterno, curp, rfc, correo, numeroCuenta, soloActivos, fechaInicio, fechaFin, page, size, sortBy, sortDir);
+                nombre, apellidoPaterno, apellidoMaterno, curp, rfc, correo, numeroCuenta, soloActivos, fechaInicio, fechaFin, page, size, sortBy, sortDir, pack);
 
         PaginaResponseRecord<ClienteRegistroResponseDto> pagina = clienteService.buscarClientesPaginados(filtro);
         return ResponseEntity.ok(GenericResponse.exito(pagina, "Consulta paginada de clientes realizada con éxito"));
@@ -107,6 +109,7 @@ public class ClienteController {
     public ResponseEntity<ClienteRegistroResponseDto> actualizarParcialCliente(
             @Parameter(description = "Identificador del cliente", example = "1") @PathVariable Long id,
             @Valid @RequestBody ClienteActualizacionRequestDto requestDto) {
+        requestDto.toRecord(); // Validación temprana Fail-Fast en Record
         securityService.validarAccesoCliente(id);
         return ResponseEntity.ok(clienteService.actualizarCliente(id, requestDto));
     }
@@ -116,6 +119,7 @@ public class ClienteController {
     public ResponseEntity<ClienteRegistroResponseDto> actualizarCliente(
             @Parameter(description = "Identificador del cliente", example = "1") @PathVariable Long id,
             @Valid @RequestBody ClienteActualizacionRequestDto requestDto) {
+        requestDto.toRecord(); // Validación temprana Fail-Fast en Record
         securityService.validarAccesoCliente(id);
         return ResponseEntity.ok(clienteService.actualizarCliente(id, requestDto));
     }

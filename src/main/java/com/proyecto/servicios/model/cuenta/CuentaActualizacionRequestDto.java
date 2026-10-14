@@ -28,4 +28,9 @@ public class CuentaActualizacionRequestDto {
     @Pattern(regexp = "^(ACTIVA|BLOQUEADA|INACTIVA|CANCELADA)$", message = "El estatus debe ser ACTIVA, BLOQUEADA, INACTIVA o CANCELADA")
     @Schema(description = "Estatus de la cuenta", example = "ACTIVA")
     private String estatus;
+
+    public CuentaActualizacionRequestRecord toRecord() {
+        return CuentaActualizacionRequestRecord.de(this);
+    }
 }
+

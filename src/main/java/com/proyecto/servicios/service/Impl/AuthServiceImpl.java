@@ -8,6 +8,7 @@ import com.proyecto.servicios.model.auth.LoginRequestDto;
 import com.proyecto.servicios.model.auth.LoginResponseDto;
 import com.proyecto.servicios.repositorys.cliente.UsuarioAccesoRepository;
 import com.proyecto.servicios.service.AuthService;
+import com.proyecto.servicios.util.DeclarativeAssertUtil;
 import com.proyecto.servicios.util.JwtUtil;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -36,21 +37,20 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional(readOnly = true)
     public LoginResponseDto iniciarSesion(LoginRequestDto request) {
-        UsuarioAccesoEntity usuario = usuarioRepository.findByUsername(request.getCorreo().trim().toLowerCase(Locale.ROOT))
-            .orElseThrow(() -> new CredencialesInvalidasException("Correo o contrasena incorrectos"));
+        request.toRecord(); // Validación temprana Fail-Fast en Record
 
-        if (!Boolean.TRUE.equals(usuario.getActivo())) {
-            throw new UsuarioInactivoException("El usuario esta inactivo");
-        }
+        UsuarioAccesoEntity usuario = usuarioRepository.findByUsername(request.getCorreo().trim().toLowerCase(Locale.ROOT))
+                .orElseThrow(() -> new CredencialesInvalidasException("Correo o contrasena incorrectos"));
+
+        DeclarativeAssertUtil.asegurar(Boolean.TRUE.equals(usuario.getActivo()),
+                () -> new UsuarioInactivoException("El usuario esta inactivo"));
 
         ClienteEntity cliente = usuario.getCliente();
-        if (!Boolean.TRUE.equals(cliente.getActivo())) {
-            throw new UsuarioInactivoException("El cliente asociado esta inactivo");
-        }
+        DeclarativeAssertUtil.asegurar(Boolean.TRUE.equals(cliente.getActivo()),
+                () -> new UsuarioInactivoException("El cliente asociado esta inactivo"));
 
-        if (!passwordEncoder.matches(request.getPassword(), usuario.getPasswordHash())) {
-            throw new CredencialesInvalidasException("Correo o contrasena incorrectos");
-        }
+        DeclarativeAssertUtil.asegurar(passwordEncoder.matches(request.getPassword(), usuario.getPasswordHash()),
+                () -> new CredencialesInvalidasException("Correo o contrasena incorrectos"));
 
         String nombreCompleto = Stream.of(cliente.getNombre(), cliente.getSegundoNombre(),
                         cliente.getApellidoPaterno(), cliente.getApellidoMaterno())

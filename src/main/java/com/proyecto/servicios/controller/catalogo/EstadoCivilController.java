@@ -34,9 +34,21 @@ public class EstadoCivilController {
     }
 
     @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
-    @Operation(summary = "Listar elementos del catálogo de estados civiles", description = "Permite consultar todos los estados civiles o filtrar solo los activos")
-    public ResponseEntity<List<CatalogoItemDto>> listar(@RequestParam(required = false, defaultValue = "false") boolean soloActivos) {
-        return ResponseEntity.ok(soloActivos ? estadoCivilService.listarActivos() : estadoCivilService.listarTodos());
+    @Operation(summary = "Listar elementos del catálogo de estados civiles con paginación", 
+               description = "Permite paginar y filtrar con soporte nativo de pack y tamaño de página dinámico")
+    public ResponseEntity<com.proyecto.servicios.model.common.GenericResponse<com.proyecto.servicios.model.common.PaginaResponseRecord<CatalogoItemDto>>> listar(
+            @io.swagger.v3.oas.annotations.Parameter(description = "Número de pack solicitado") @RequestParam(value = "pack", required = false) Integer pack,
+            @io.swagger.v3.oas.annotations.Parameter(description = "Número de página (inicia en 0)") @RequestParam(defaultValue = "0") int page,
+            @io.swagger.v3.oas.annotations.Parameter(description = "Cantidad de elementos por página") @RequestParam(defaultValue = "10") int size,
+            @io.swagger.v3.oas.annotations.Parameter(description = "Campo de ordenación") @RequestParam(defaultValue = "id") String sortBy,
+            @io.swagger.v3.oas.annotations.Parameter(description = "Dirección de orden (ASC / DESC)") @RequestParam(defaultValue = "ASC") String sortDir,
+            @io.swagger.v3.oas.annotations.Parameter(description = "Filtrar solo activos") @RequestParam(required = false) Boolean soloActivos,
+            @io.swagger.v3.oas.annotations.Parameter(description = "Búsqueda por código o descripción") @RequestParam(required = false) String busqueda) {
+
+        com.proyecto.servicios.model.catalogo.CatalogoConsultaFiltroRecord filtro =
+                new com.proyecto.servicios.model.catalogo.CatalogoConsultaFiltroRecord(soloActivos, busqueda, page, size, sortBy, sortDir, pack);
+        com.proyecto.servicios.model.common.PaginaResponseRecord<CatalogoItemDto> resultado = estadoCivilService.buscarPaginado(filtro);
+        return ResponseEntity.ok(com.proyecto.servicios.model.common.GenericResponse.exito(resultado, "Catálogo de estados civiles consultado exitosamente"));
     }
 
     @GetMapping(value = "/{id}", produces = MediaType.APPLICATION_JSON_VALUE)

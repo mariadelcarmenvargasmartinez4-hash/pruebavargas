@@ -2,13 +2,14 @@ package com.proyecto.servicios.repositorys.catalogo;
 
 import com.proyecto.servicios.entity.catalogo.EstadoCivilEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface EstadoCivilRepository extends JpaRepository<EstadoCivilEntity, Long> {
+public interface EstadoCivilRepository extends JpaRepository<EstadoCivilEntity, Long>, JpaSpecificationExecutor<EstadoCivilEntity> {
 
     List<EstadoCivilEntity> findByActivoTrue();
 

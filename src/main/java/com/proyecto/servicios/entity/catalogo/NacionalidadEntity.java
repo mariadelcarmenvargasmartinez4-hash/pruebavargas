@@ -14,6 +14,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.Optional;
 
 @Entity
 @Table(name = "catalogo_nacionalidades")
@@ -43,15 +44,10 @@ public class NacionalidadEntity {
 
     @PrePersist
     public void prePersist() {
-        if (this.codigo != null) {
-            this.codigo = this.codigo.trim().toUpperCase();
-        }
-        if (this.descripcion != null) {
-            this.descripcion = this.descripcion.trim().toUpperCase();
-        }
-        if (this.activo == null) {
-            this.activo = true;
-        }
+        this.codigo = Optional.ofNullable(this.codigo).map(String::trim).map(String::toUpperCase).orElse(null);
+        this.descripcion = Optional.ofNullable(this.descripcion).map(String::trim).map(String::toUpperCase).orElse(null);
+        this.activo = Optional.ofNullable(this.activo).orElse(true);
         this.fechaCreacion = LocalDateTime.now();
     }
 }
+

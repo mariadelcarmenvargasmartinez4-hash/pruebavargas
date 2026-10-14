@@ -18,6 +18,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.Optional;
 
 // Entidad JPA para la tabla usuarios_acceso (autenticacion del cliente)
 @Entity
@@ -61,10 +62,9 @@ public class UsuarioAccesoEntity {
     public void prePersist() {
         this.fechaCreacion = LocalDateTime.now();
         this.fechaActualizacion = LocalDateTime.now();
-        if (this.activo == null) {
-            this.activo = true;
-        }
+        this.activo = Optional.ofNullable(this.activo).orElse(true);
     }
+
 
     @PreUpdate
     public void preUpdate() {

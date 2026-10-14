@@ -24,4 +24,8 @@ public class UsuarioAgregarRequestDto {
     @Size(min = 8, max = 50, message = "La contrasena debe tener entre 8 y 50 caracteres")
     @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z\\d]).{8,50}$", message = "La contrasena debe contener mayuscula, minuscula, numero y caracter especial")
     private String password;
-}
+
+    public UsuarioAgregarRequestRecord toRecord() {
+        return UsuarioAgregarRequestRecord.de(this);
+    }
+}

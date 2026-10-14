@@ -6,16 +6,19 @@ import com.proyecto.servicios.entity.cliente.DomicilioEntity;
 import com.proyecto.servicios.entity.cliente.UsuarioAccesoEntity;
 import com.proyecto.servicios.exception.ClienteNoEncontradoException;
 import com.proyecto.servicios.exception.ClienteYaRegistradoException;
-import com.proyecto.servicios.exception.CuentaNoEncontradaException;
 import com.proyecto.servicios.exception.CurpDuplicadaException;
 import com.proyecto.servicios.exception.ReglaNegocioException;
 import com.proyecto.servicios.exception.RfcDuplicadoException;
 import com.proyecto.servicios.model.cliente.ClienteActualizacionRequestDto;
+import com.proyecto.servicios.model.cliente.ClienteActualizacionRequestRecord;
+import com.proyecto.servicios.model.cliente.ClienteConsultaFiltroRecord;
 import com.proyecto.servicios.model.cliente.ClienteRegistroRequestDto;
+import com.proyecto.servicios.model.cliente.ClienteRegistroRequestRecord;
 import com.proyecto.servicios.model.cliente.ClienteRegistroResponseDto;
 import com.proyecto.servicios.model.cliente.CuentaBancariaDto;
 import com.proyecto.servicios.model.cliente.DomicilioDto;
 import com.proyecto.servicios.model.cliente.UsuarioAccesoDto;
+import com.proyecto.servicios.model.common.PaginaResponseRecord;
 import com.proyecto.servicios.model.util.MetricasTextoDto;
 import com.proyecto.servicios.repositorys.cliente.ClienteRepository;
 import com.proyecto.servicios.repositorys.cliente.CuentaRepository;
@@ -25,11 +28,12 @@ import com.proyecto.servicios.service.ClienteService;
 import com.proyecto.servicios.service.EstadoCivilService;
 import com.proyecto.servicios.service.NacionalidadService;
 import com.proyecto.servicios.service.SexoService;
+import com.proyecto.servicios.util.DeclarativeAssertUtil;
 import com.proyecto.servicios.util.GeneradorCuentaBancariaUtil;
 import com.proyecto.servicios.util.MetricasTextoUtil;
+import jakarta.persistence.criteria.Join;
+import jakarta.persistence.criteria.JoinType;
 import lombok.extern.slf4j.Slf4j;
-import com.proyecto.servicios.model.cliente.ClienteConsultaFiltroRecord;
-import com.proyecto.servicios.model.common.PaginaResponseRecord;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -40,19 +44,14 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import jakarta.persistence.criteria.Join;
-import jakarta.persistence.criteria.JoinType;
 import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.Period;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-// Implementación de la lógica de negocio para clientes desacoplada, con validación declarativa y sin ifs anidados
+// Implementación de la lógica de negocio para clientes desacoplada, con programación declarativa sin 'if'
 @Slf4j
 @Service
 public class ClienteServiceImpl implements ClienteService {
@@ -98,41 +97,51 @@ public class ClienteServiceImpl implements ClienteService {
     public ClienteRegistroResponseDto registrarCliente(ClienteRegistroRequestDto dto) {
         log.info("Iniciando registro de cliente persona física con CURP: {}", dto.getCurp());
 
-        // 1. Reglas de negocio iniciales (Guard Clauses sin ifs anidados)
-        validarMayoriaDeEdad(dto.getFechaNacimiento());
-        validarCatalogos(dto.getSexo(), dto.getNacionalidad(), dto.getEstadoCivil());
+        // 1. Validación temprana Fail-Fast en Record (sin lógica de validación manual en el servicio)
+        ClienteRegistroRequestRecord.de(dto);
+
+        // 2. Validación declarativa de catálogos y unicidad en base de datos
+        DeclarativeAssertUtil.asegurar(sexoService.esValidoYActivo(dto.getSexo()),
+                () -> new ReglaNegocioException("El sexo '" + dto.getSexo() + "' no es válido o no está activo en el catálogo"));
+        DeclarativeAssertUtil.asegurar(nacionalidadService.esValidoYActivo(dto.getNacionalidad()),
+                () -> new ReglaNegocioException("La nacionalidad '" + dto.getNacionalidad() + "' no es válida o no está activa en el catálogo"));
+        DeclarativeAssertUtil.asegurar(estadoCivilService.esValidoYActivo(dto.getEstadoCivil()),
+                () -> new ReglaNegocioException("El estado civil '" + dto.getEstadoCivil() + "' no es válido o no está activo en el catálogo"));
 
         String curp = dto.getCurp().trim().toUpperCase();
-        validarCurpUnico(curp);
+        DeclarativeAssertUtil.prohibir(clienteRepository.existsByCurp(curp),
+                () -> new CurpDuplicadaException("El CURP '" + curp + "' ya está registrado"));
 
         String rfc = dto.getRfc().trim().toUpperCase();
-        validarRfcUnico(rfc);
+        DeclarativeAssertUtil.prohibir(clienteRepository.existsByRfc(rfc),
+                () -> new RfcDuplicadoException("El RFC '" + rfc + "' ya está registrado"));
 
         String correo = dto.getCorreoElectronico().trim().toLowerCase();
-        validarCorreoUnico(correo);
+        DeclarativeAssertUtil.prohibir(clienteRepository.existsByCorreoElectronico(correo),
+                () -> new ClienteYaRegistradoException("El correo electrónico ya está registrado"));
 
-        // 2. Registro de métricas de texto y caracteres en campos alfanuméricos clave
+        // 3. Registro de métricas de texto
         registrarMetricasTexto(curp, rfc);
 
-        // 3. Saldo inicial
+        // 4. Saldo inicial
         BigDecimal saldoInicial = Optional.ofNullable(dto.getSaldoInicial())
                 .filter(saldo -> saldo.compareTo(BigDecimal.ZERO) >= 0)
-                .orElse(Optional.ofNullable(saldoInicialPorDefecto).orElse(new BigDecimal("500.00")));
+                .orElseGet(() -> Optional.ofNullable(saldoInicialPorDefecto).orElse(new BigDecimal("500.00")));
 
-        // 4. Persistencia de ClienteEntity
+        // 5. Persistencia de ClienteEntity
         ClienteEntity cliente = construirClienteEntity(dto, curp, rfc, correo);
         ClienteEntity clienteGuardado = clienteRepository.save(cliente);
 
-        // 5. Persistencia de DomicilioEntity
+        // 6. Persistencia de DomicilioEntity
         DomicilioEntity domicilio = construirDomicilioEntity(dto, clienteGuardado);
         DomicilioEntity domicilioGuardado = domicilioRepository.save(domicilio);
         clienteGuardado.setDomicilio(domicilioGuardado);
 
-        // 6. Creación automática de Cuenta Bancaria
+        // 7. Creación automática de Cuenta Bancaria
         CuentaEntity cuenta = construirCuentaEntity(dto, clienteGuardado, saldoInicial);
         CuentaEntity cuentaGuardada = cuentaRepository.save(cuenta);
 
-        // 7. Creación automática de Usuario de Acceso
+        // 8. Creación automática de Usuario de Acceso
         UsuarioAccesoEntity usuario = construirUsuarioEntity(dto, clienteGuardado, correo);
         UsuarioAccesoEntity usuarioGuardado = usuarioAccesoRepository.save(usuario);
         clienteGuardado.setUsuarioAcceso(usuarioGuardado);
@@ -152,38 +161,55 @@ public class ClienteServiceImpl implements ClienteService {
         Specification<ClienteEntity> spec = (root, query, cb) -> {
             List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
 
-            if (filtro.nombre() != null) {
-                predicates.add(cb.like(cb.lower(root.get("nombre")), "%" + filtro.nombre().toLowerCase() + "%"));
-            }
-            if (filtro.apellidoPaterno() != null) {
-                predicates.add(cb.like(cb.lower(root.get("apellidoPaterno")), "%" + filtro.apellidoPaterno().toLowerCase() + "%"));
-            }
-            if (filtro.apellidoMaterno() != null) {
-                predicates.add(cb.like(cb.lower(root.get("apellidoMaterno")), "%" + filtro.apellidoMaterno().toLowerCase() + "%"));
-            }
-            if (filtro.curp() != null) {
-                predicates.add(cb.equal(cb.upper(root.get("curp")), filtro.curp()));
-            }
-            if (filtro.rfc() != null) {
-                predicates.add(cb.equal(cb.upper(root.get("rfc")), filtro.rfc()));
-            }
-            if (filtro.correo() != null) {
-                predicates.add(cb.equal(cb.lower(root.get("correoElectronico")), filtro.correo()));
-            }
-            if (filtro.numeroCuenta() != null) {
-                Join<ClienteEntity, CuentaEntity> cuentasJoin = root.join("cuentas", JoinType.INNER);
-                predicates.add(cb.equal(cuentasJoin.get("numeroCuenta"), filtro.numeroCuenta()));
-            }
-            if (Boolean.TRUE.equals(filtro.soloActivos())) {
-                predicates.add(cb.isTrue(root.get("activo")));
-            }
-            if (filtro.fechaInicio() != null && filtro.fechaFin() != null) {
-                predicates.add(cb.between(root.get("fechaCreacion"), filtro.fechaInicio(), filtro.fechaFin()));
-            } else if (filtro.fechaInicio() != null) {
-                predicates.add(cb.greaterThanOrEqualTo(root.get("fechaCreacion"), filtro.fechaInicio()));
-            } else if (filtro.fechaFin() != null) {
-                predicates.add(cb.lessThanOrEqualTo(root.get("fechaCreacion"), filtro.fechaFin()));
-            }
+            Optional.ofNullable(filtro.nombre())
+                    .filter(Predicate.not(String::isBlank))
+                    .map(n -> cb.like(cb.lower(root.get("nombre")), "%" + n.toLowerCase() + "%"))
+                    .ifPresent(predicates::add);
+
+            Optional.ofNullable(filtro.apellidoPaterno())
+                    .filter(Predicate.not(String::isBlank))
+                    .map(ap -> cb.like(cb.lower(root.get("apellidoPaterno")), "%" + ap.toLowerCase() + "%"))
+                    .ifPresent(predicates::add);
+
+            Optional.ofNullable(filtro.apellidoMaterno())
+                    .filter(Predicate.not(String::isBlank))
+                    .map(am -> cb.like(cb.lower(root.get("apellidoMaterno")), "%" + am.toLowerCase() + "%"))
+                    .ifPresent(predicates::add);
+
+            Optional.ofNullable(filtro.curp())
+                    .filter(Predicate.not(String::isBlank))
+                    .map(c -> cb.equal(cb.upper(root.get("curp")), c))
+                    .ifPresent(predicates::add);
+
+            Optional.ofNullable(filtro.rfc())
+                    .filter(Predicate.not(String::isBlank))
+                    .map(r -> cb.equal(cb.upper(root.get("rfc")), r))
+                    .ifPresent(predicates::add);
+
+            Optional.ofNullable(filtro.correo())
+                    .filter(Predicate.not(String::isBlank))
+                    .map(co -> cb.equal(cb.lower(root.get("correoElectronico")), co))
+                    .ifPresent(predicates::add);
+
+            Optional.ofNullable(filtro.numeroCuenta())
+                    .filter(Predicate.not(String::isBlank))
+                    .map(nc -> {
+                        Join<ClienteEntity, CuentaEntity> cuentasJoin = root.join("cuentas", JoinType.INNER);
+                        return cb.equal(cuentasJoin.get("numeroCuenta"), nc);
+                    })
+                    .ifPresent(predicates::add);
+
+            Optional.ofNullable(filtro.soloActivos())
+                    .filter(Boolean::booleanValue)
+                    .map(act -> cb.isTrue(root.get("activo")))
+                    .ifPresent(predicates::add);
+
+            Optional.ofNullable(filtro.fechaInicio())
+                    .map(fi -> Optional.ofNullable(filtro.fechaFin())
+                            .map(ff -> cb.between(root.get("fechaCreacion"), fi, ff))
+                            .orElseGet(() -> cb.greaterThanOrEqualTo(root.get("fechaCreacion"), fi)))
+                    .or(() -> Optional.ofNullable(filtro.fechaFin()).map(ff -> cb.lessThanOrEqualTo(root.get("fechaCreacion"), ff)))
+                    .ifPresent(predicates::add);
 
             return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
         };
@@ -214,15 +240,17 @@ public class ClienteServiceImpl implements ClienteService {
     @Override
     @Transactional(transactionManager = "sfTransactionManager")
     public ClienteRegistroResponseDto actualizarCliente(Long id, ClienteActualizacionRequestDto dto) {
+        // Validación Fail-Fast en Record
+        ClienteActualizacionRequestRecord.de(dto);
+
         log.info("Iniciando actualización de cliente con ID: {}", id);
 
         ClienteEntity cliente = clienteRepository.findById(id)
                 .orElseThrow(() -> new ClienteNoEncontradoException("Cliente no encontrado con ID " + id));
 
         // Regla: No se permite modificar información de clientes dados de baja
-        if (!Boolean.TRUE.equals(cliente.getActivo())) {
-            throw new ReglaNegocioException("No se puede modificar la información de un cliente que ha sido dado de baja (inactivo)");
-        }
+        DeclarativeAssertUtil.asegurar(Boolean.TRUE.equals(cliente.getActivo()),
+                "No se puede modificar la información de un cliente que ha sido dado de baja (inactivo)");
 
         actualizarDatosPersonales(cliente, dto);
         actualizarDatosContacto(cliente, dto);
@@ -243,9 +271,8 @@ public class ClienteServiceImpl implements ClienteService {
                 .orElseThrow(() -> new ClienteNoEncontradoException("Cliente no encontrado con ID " + id));
 
         // Regla: Validar que no se encuentre ya dado de baja
-        if (!Boolean.TRUE.equals(cliente.getActivo())) {
-            throw new ReglaNegocioException("El cliente con ID " + id + " ya se encuentra dado de baja (inactivo)");
-        }
+        DeclarativeAssertUtil.asegurar(Boolean.TRUE.equals(cliente.getActivo()),
+                () -> new ReglaNegocioException("El cliente con ID " + id + " ya se encuentra dado de baja (inactivo)"));
 
         cliente.setActivo(false);
         clienteRepository.save(cliente);
@@ -272,9 +299,8 @@ public class ClienteServiceImpl implements ClienteService {
                 .orElseThrow(() -> new ClienteNoEncontradoException("Cliente no encontrado con ID " + id));
 
         // Regla: Validar si ya está activo
-        if (Boolean.TRUE.equals(cliente.getActivo())) {
-            throw new ReglaNegocioException("El cliente con ID " + id + " ya se encuentra activo");
-        }
+        DeclarativeAssertUtil.prohibir(Boolean.TRUE.equals(cliente.getActivo()),
+                () -> new ReglaNegocioException("El cliente con ID " + id + " ya se encuentra activo"));
 
         cliente.setActivo(true);
         clienteRepository.save(cliente);
@@ -287,37 +313,27 @@ public class ClienteServiceImpl implements ClienteService {
         return construirRespuestaCompleta(cliente);
     }
 
-    // --- Métodos atómicos de actualización sin ifs anidados ---
+    // --- Métodos de actualización declarativos sin 'if' ---
 
     private void actualizarDatosPersonales(ClienteEntity cliente, ClienteActualizacionRequestDto dto) {
-        Optional.ofNullable(dto.getFechaNacimiento()).ifPresent(fecha -> {
-            validarMayoriaDeEdad(fecha);
-            cliente.setFechaNacimiento(fecha);
-        });
-
+        Optional.ofNullable(dto.getFechaNacimiento()).ifPresent(cliente::setFechaNacimiento);
         Optional.ofNullable(dto.getNombre()).filter(Predicate.not(String::isBlank)).ifPresent(cliente::setNombre);
         Optional.ofNullable(dto.getSegundoNombre()).ifPresent(cliente::setSegundoNombre);
         Optional.ofNullable(dto.getApellidoPaterno()).filter(Predicate.not(String::isBlank)).ifPresent(cliente::setApellidoPaterno);
         Optional.ofNullable(dto.getApellidoMaterno()).filter(Predicate.not(String::isBlank)).ifPresent(cliente::setApellidoMaterno);
 
         Optional.ofNullable(dto.getSexo()).filter(Predicate.not(String::isBlank)).ifPresent(s -> {
-            if (!sexoService.esValidoYActivo(s)) {
-                throw new ReglaNegocioException("El sexo '" + s + "' no es válido en el catálogo");
-            }
+            DeclarativeAssertUtil.asegurar(sexoService.esValidoYActivo(s), "El sexo '" + s + "' no es válido en el catálogo");
             cliente.setSexo(s.toUpperCase());
         });
 
         Optional.ofNullable(dto.getNacionalidad()).filter(Predicate.not(String::isBlank)).ifPresent(n -> {
-            if (!nacionalidadService.esValidoYActivo(n)) {
-                throw new ReglaNegocioException("La nacionalidad '" + n + "' no es válida en el catálogo");
-            }
+            DeclarativeAssertUtil.asegurar(nacionalidadService.esValidoYActivo(n), "La nacionalidad '" + n + "' no es válida en el catálogo");
             cliente.setNacionalidad(n.toUpperCase());
         });
 
         Optional.ofNullable(dto.getEstadoCivil()).filter(Predicate.not(String::isBlank)).ifPresent(ec -> {
-            if (!estadoCivilService.esValidoYActivo(ec)) {
-                throw new ReglaNegocioException("El estado civil '" + ec + "' no es válido en el catálogo");
-            }
+            DeclarativeAssertUtil.asegurar(estadoCivilService.esValidoYActivo(ec), "El estado civil '" + ec + "' no es válido en el catálogo");
             cliente.setEstadoCivil(ec.toUpperCase());
         });
     }
@@ -328,7 +344,8 @@ public class ClienteServiceImpl implements ClienteService {
                 .map(String::toLowerCase)
                 .filter(correo -> !correo.equalsIgnoreCase(cliente.getCorreoElectronico()))
                 .ifPresent(nuevoCorreo -> {
-                    validarCorreoUnico(nuevoCorreo);
+                    DeclarativeAssertUtil.prohibir(clienteRepository.existsByCorreoElectronico(nuevoCorreo),
+                            () -> new ClienteYaRegistradoException("El correo electrónico ya está registrado"));
                     cliente.setCorreoElectronico(nuevoCorreo);
                 });
 
@@ -339,12 +356,7 @@ public class ClienteServiceImpl implements ClienteService {
     private void actualizarDatosLaborales(ClienteEntity cliente, ClienteActualizacionRequestDto dto) {
         Optional.ofNullable(dto.getOcupacion()).filter(Predicate.not(String::isBlank)).ifPresent(cliente::setOcupacion);
         Optional.ofNullable(dto.getEmpresa()).filter(Predicate.not(String::isBlank)).ifPresent(cliente::setEmpresa);
-        Optional.ofNullable(dto.getIngresoMensual()).ifPresent(ingreso -> {
-            if (ingreso.compareTo(BigDecimal.ZERO) <= 0) {
-                throw new ReglaNegocioException("El ingreso mensual debe ser mayor a cero");
-            }
-            cliente.setIngresoMensual(ingreso);
-        });
+        Optional.ofNullable(dto.getIngresoMensual()).ifPresent(cliente::setIngresoMensual);
     }
 
     private void actualizarDomicilio(ClienteEntity cliente, ClienteActualizacionRequestDto dto) {
@@ -363,54 +375,6 @@ public class ClienteServiceImpl implements ClienteService {
         Optional.ofNullable(domicilio.getCalle()).ifPresent(c -> domicilioRepository.save(domicilio));
     }
 
-    // --- Validaciones y Guard Clauses ---
-
-    private void validarMayoriaDeEdad(LocalDate fechaNacimiento) {
-        if (fechaNacimiento == null) {
-            throw new ReglaNegocioException("La fecha de nacimiento es obligatoria");
-        }
-        if (fechaNacimiento.isAfter(LocalDate.now())) {
-            throw new ReglaNegocioException("La fecha de nacimiento no puede ser una fecha futura");
-        }
-        int edad = Period.between(fechaNacimiento, LocalDate.now()).getYears();
-        if (edad < 18) {
-            throw new ReglaNegocioException("El cliente debe ser mayor de edad (18 años o más)");
-        }
-        if (edad > 100) {
-            throw new ReglaNegocioException("La fecha de nacimiento no debe exceder los 100 años");
-        }
-    }
-
-    private void validarCatalogos(String sexo, String nacionalidad, String estadoCivil) {
-        if (!sexoService.esValidoYActivo(sexo)) {
-            throw new ReglaNegocioException("El sexo '" + sexo + "' no es válido o no está activo en el catálogo");
-        }
-        if (!nacionalidadService.esValidoYActivo(nacionalidad)) {
-            throw new ReglaNegocioException("La nacionalidad '" + nacionalidad + "' no es válida o no está activa en el catálogo");
-        }
-        if (!estadoCivilService.esValidoYActivo(estadoCivil)) {
-            throw new ReglaNegocioException("El estado civil '" + estadoCivil + "' no es válido o no está activo en el catálogo");
-        }
-    }
-
-    private void validarCurpUnico(String curp) {
-        if (clienteRepository.existsByCurp(curp)) {
-            throw new CurpDuplicadaException("El CURP '" + curp + "' ya está registrado");
-        }
-    }
-
-    private void validarRfcUnico(String rfc) {
-        if (clienteRepository.existsByRfc(rfc)) {
-            throw new RfcDuplicadoException("El RFC '" + rfc + "' ya está registrado");
-        }
-    }
-
-    private void validarCorreoUnico(String correo) {
-        if (clienteRepository.existsByCorreoElectronico(correo)) {
-            throw new ClienteYaRegistradoException("El correo electrónico ya está registrado");
-        }
-    }
-
     private void registrarMetricasTexto(String curp, String rfc) {
         MetricasTextoDto metricasCurp = metricasTextoUtil.analizar("curp", curp);
         MetricasTextoDto metricasRfc = metricasTextoUtil.analizar("rfc", rfc);
@@ -418,8 +382,6 @@ public class ClienteServiceImpl implements ClienteService {
                 metricasCurp.getTotalCaracteres(), metricasCurp.getTotalLetras(), metricasCurp.getTotalDigitos(),
                 metricasRfc.getTotalCaracteres(), metricasRfc.getTotalLetras(), metricasRfc.getTotalDigitos());
     }
-
-    // --- Constructores de Entidades ---
 
     private ClienteEntity construirClienteEntity(ClienteRegistroRequestDto dto, String curp, String rfc, String correo) {
         return ClienteEntity.builder()
@@ -492,9 +454,7 @@ public class ClienteServiceImpl implements ClienteService {
         do {
             cuenta = generadorCuentaUtil.generarNumeroCuenta();
             intentos++;
-            if (intentos > 10) {
-                throw new ReglaNegocioException("No se pudo generar un número de cuenta único");
-            }
+            DeclarativeAssertUtil.prohibir(intentos > 10, "No se pudo generar un número de cuenta único");
         } while (cuentaRepository.existsByNumeroCuenta(cuenta));
         return cuenta;
     }

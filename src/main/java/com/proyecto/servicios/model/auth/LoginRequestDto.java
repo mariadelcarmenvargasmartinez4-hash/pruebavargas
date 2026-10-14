@@ -26,4 +26,9 @@ public class LoginRequestDto {
     @NotBlank(message = "La contraseña es obligatoria")
     @Schema(description = "Contraseña del usuario", example = "Segura123#")
     private String password;
+
+    public LoginRequestRecord toRecord() {
+        return LoginRequestRecord.de(this);
+    }
 }
+

@@ -174,4 +174,9 @@ public class ClienteRegistroRequestDto {
     @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[^A-Za-z\\d\\s]).{8,50}$", message = "La contraseña no cumple con los criterios de seguridad: debe contener al menos 8 caracteres, incluyendo una letra mayúscula, una letra minúscula, un número y un carácter especial sin espacios")
     @Schema(description = "Contraseña de acceso para el usuario del cliente", example = "Segura123#")
     private String password;
+
+    public ClienteRegistroRequestRecord toRecord() {
+        return ClienteRegistroRequestRecord.de(this);
+    }
 }
+

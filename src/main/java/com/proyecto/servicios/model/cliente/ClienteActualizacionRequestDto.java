@@ -125,4 +125,9 @@ public class ClienteActualizacionRequestDto {
     @Digits(integer = 10, fraction = 2, message = "El campo 'ingresoMensual' debe ser un valor numerico decimal valido")
     @Schema(description = "Ingreso mensual comprobable (mayor a cero)", example = "45000.00")
     private BigDecimal ingresoMensual;
+
+    public ClienteActualizacionRequestRecord toRecord() {
+        return ClienteActualizacionRequestRecord.de(this);
+    }
 }
+

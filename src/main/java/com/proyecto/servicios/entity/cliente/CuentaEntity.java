@@ -19,6 +19,7 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Optional;
 
 // Entidad JPA para la tabla cuentas bancarias asociadas a clientes
 @Entity
@@ -70,19 +71,12 @@ public class CuentaEntity {
     public void prePersist() {
         this.fechaApertura = LocalDateTime.now();
         this.fechaActualizacion = LocalDateTime.now();
-        if (this.tipoCuenta == null) {
-            this.tipoCuenta = "DEBITO";
-        }
-        if (this.saldo == null) {
-            this.saldo = BigDecimal.ZERO;
-        }
-        if (this.moneda == null) {
-            this.moneda = "MXN";
-        }
-        if (this.estatus == null) {
-            this.estatus = "ACTIVA";
-        }
+        this.tipoCuenta = Optional.ofNullable(this.tipoCuenta).orElse("DEBITO");
+        this.saldo = Optional.ofNullable(this.saldo).orElse(BigDecimal.ZERO);
+        this.moneda = Optional.ofNullable(this.moneda).orElse("MXN");
+        this.estatus = Optional.ofNullable(this.estatus).orElse("ACTIVA");
     }
+
 
     @PreUpdate
     public void preUpdate() {

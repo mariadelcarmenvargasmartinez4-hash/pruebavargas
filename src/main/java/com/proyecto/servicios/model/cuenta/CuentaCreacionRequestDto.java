@@ -31,4 +31,9 @@ public class CuentaCreacionRequestDto {
 
     @Schema(description = "Moneda de la cuenta (por defecto MXN)", example = "MXN")
     private String moneda;
+
+    public CuentaCreacionRequestRecord toRecord() {
+        return CuentaCreacionRequestRecord.de(this);
+    }
 }
+

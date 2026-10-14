@@ -2,13 +2,14 @@ package com.proyecto.servicios.repositorys.catalogo;
 
 import com.proyecto.servicios.entity.catalogo.SexoEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface SexoRepository extends JpaRepository<SexoEntity, Long> {
+public interface SexoRepository extends JpaRepository<SexoEntity, Long>, JpaSpecificationExecutor<SexoEntity> {
 
     List<SexoEntity> findByActivoTrue();
 

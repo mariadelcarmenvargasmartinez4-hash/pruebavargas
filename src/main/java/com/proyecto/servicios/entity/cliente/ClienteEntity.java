@@ -23,6 +23,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 // Entidad JPA para la tabla clientes
 @Entity
@@ -117,10 +118,9 @@ public class ClienteEntity {
     public void prePersist() {
         this.fechaCreacion = LocalDateTime.now();
         this.fechaActualizacion = LocalDateTime.now();
-        if (this.activo == null) {
-            this.activo = true;
-        }
+        this.activo = Optional.ofNullable(this.activo).orElse(true);
     }
+
 
     @PreUpdate
     public void preUpdate() {

@@ -13,6 +13,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Optional;
+import java.util.function.Predicate;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -29,24 +31,26 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
-        String authorization = request.getHeader("Authorization");
-        if (authorization != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            String token = authorization.trim();
-            if (token.regionMatches(true, 0, "Bearer ", 0, 7)) {
-                token = token.substring(7).trim();
-            }
-            if (token.regionMatches(true, 0, "Bearer ", 0, 7)) {
-                token = token.substring(7).trim();
-            }
-            if (!token.isBlank() && jwtUtil.validarToken(token)) {
-                String username = jwtUtil.extraerUsername(token);
-                usuarioRepository.findByUsername(username)
-                        .filter(usuario -> Boolean.TRUE.equals(usuario.getActivo()))
-                        .ifPresent(usuario -> SecurityContextHolder.getContext().setAuthentication(
-                                new UsernamePasswordAuthenticationToken(
-                                    username, null, AuthorityUtils.createAuthorityList("ROLE_" + usuario.getRol()))));
-            }
-        }
+        Optional.ofNullable(request.getHeader("Authorization"))
+                .map(String::trim)
+                .filter(auth -> SecurityContextHolder.getContext().getAuthentication() == null)
+                .map(this::extraerTokenLimpio)
+                .filter(Predicate.not(String::isBlank))
+                .filter(jwtUtil::validarToken)
+                .ifPresent(token -> {
+                    String username = jwtUtil.extraerUsername(token);
+                    usuarioRepository.findByUsername(username)
+                            .filter(usuario -> Boolean.TRUE.equals(usuario.getActivo()))
+                            .ifPresent(usuario -> SecurityContextHolder.getContext().setAuthentication(
+                                    new UsernamePasswordAuthenticationToken(
+                                            username, null, AuthorityUtils.createAuthorityList("ROLE_" + usuario.getRol()))));
+                });
+
         filterChain.doFilter(request, response);
+    }
+
+    private String extraerTokenLimpio(String auth) {
+        String token = auth.regionMatches(true, 0, "Bearer ", 0, 7) ? auth.substring(7).trim() : auth;
+        return token.regionMatches(true, 0, "Bearer ", 0, 7) ? token.substring(7).trim() : token;
     }
 }

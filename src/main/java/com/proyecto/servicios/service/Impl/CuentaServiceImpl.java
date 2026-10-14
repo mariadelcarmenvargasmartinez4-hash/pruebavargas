@@ -6,16 +6,19 @@ import com.proyecto.servicios.exception.ClienteNoEncontradoException;
 import com.proyecto.servicios.exception.CuentaNoEncontradaException;
 import com.proyecto.servicios.exception.ReglaNegocioException;
 import com.proyecto.servicios.model.cliente.CuentaBancariaDto;
+import com.proyecto.servicios.model.common.PaginaResponseRecord;
 import com.proyecto.servicios.model.cuenta.CuentaActualizacionRequestDto;
+import com.proyecto.servicios.model.cuenta.CuentaActualizacionRequestRecord;
+import com.proyecto.servicios.model.cuenta.CuentaConsultaFiltroRecord;
 import com.proyecto.servicios.model.cuenta.CuentaCreacionRequestDto;
+import com.proyecto.servicios.model.cuenta.CuentaCreacionRequestRecord;
 import com.proyecto.servicios.model.cuenta.SaldoCuentaDto;
 import com.proyecto.servicios.repositorys.cliente.ClienteRepository;
 import com.proyecto.servicios.repositorys.cliente.CuentaRepository;
 import com.proyecto.servicios.service.CuentaService;
+import com.proyecto.servicios.util.DeclarativeAssertUtil;
 import com.proyecto.servicios.util.GeneradorCuentaBancariaUtil;
 import lombok.extern.slf4j.Slf4j;
-import com.proyecto.servicios.model.common.PaginaResponseRecord;
-import com.proyecto.servicios.model.cuenta.CuentaConsultaFiltroRecord;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -25,14 +28,14 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import jakarta.persistence.criteria.Predicate;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Optional;
+import java.util.function.Predicate;
 
-// Implementacion de la logica de negocio para cuentas bancarias
+// Implementación de la lógica de negocio para cuentas bancarias desacoplada y sin declaraciones if
 @Slf4j
 @Service
 public class CuentaServiceImpl implements CuentaService {
@@ -44,7 +47,6 @@ public class CuentaServiceImpl implements CuentaService {
     @Value("${banco.cuenta.saldo-inicial-default:500.00}")
     private BigDecimal saldoInicialPorDefecto;
 
-    // Inyeccion de dependencias por constructor
     public CuentaServiceImpl(CuentaRepository cuentaRepository,
                              ClienteRepository clienteRepository,
                              GeneradorCuentaBancariaUtil generadorCuentaUtil) {
@@ -53,34 +55,34 @@ public class CuentaServiceImpl implements CuentaService {
         this.generadorCuentaUtil = generadorCuentaUtil;
     }
 
-    // Crea una cuenta bancaria asociada a un cliente activo
     @Override
     @Transactional(transactionManager = "sfTransactionManager")
     public CuentaBancariaDto crearCuenta(CuentaCreacionRequestDto dto) {
+        // Validación Fail-Fast en Record
+        CuentaCreacionRequestRecord.de(dto);
+
         log.info("Creando cuenta bancaria para el cliente ID: {}", dto.getClienteId());
 
         ClienteEntity cliente = clienteRepository.findById(dto.getClienteId())
                 .orElseThrow(() -> new ClienteNoEncontradoException("Cliente no encontrado con ID " + dto.getClienteId()));
 
-        // Regla de negocio: Solo los clientes activos podran tener cuentas activas
-        if (!Boolean.TRUE.equals(cliente.getActivo())) {
-            log.warn("Intento de apertura de cuenta para cliente inactivo ID: {}", dto.getClienteId());
-            throw new ReglaNegocioException("No se puede crear una cuenta bancaria para un cliente inactivo");
-        }
+        // Regla declarativa: Solo los clientes activos podrán tener cuentas activas
+        DeclarativeAssertUtil.asegurar(Boolean.TRUE.equals(cliente.getActivo()),
+                "No se puede crear una cuenta bancaria para un cliente inactivo");
 
-        // Regla de negocio: El saldo inicial no puede ser negativo
-        if (dto.getSaldoInicial() != null && dto.getSaldoInicial().compareTo(BigDecimal.ZERO) < 0) {
-            throw new ReglaNegocioException("El saldo inicial no puede ser negativo");
-        }
-
-        BigDecimal saldoInicial = (dto.getSaldoInicial() != null)
-                ? dto.getSaldoInicial()
-                : (saldoInicialPorDefecto != null ? saldoInicialPorDefecto : new BigDecimal("500.00"));
+        BigDecimal saldoInicial = Optional.ofNullable(dto.getSaldoInicial())
+                .orElseGet(() -> Optional.ofNullable(saldoInicialPorDefecto).orElse(new BigDecimal("500.00")));
 
         String numeroCuenta = generarNumeroCuentaUnico();
         String clabe = generadorCuentaUtil.generarClabe(numeroCuenta);
-        String tipoCuenta = (dto.getTipoCuenta() != null && !dto.getTipoCuenta().isBlank()) ? dto.getTipoCuenta().toUpperCase() : "DEBITO";
-        String moneda = (dto.getMoneda() != null && !dto.getMoneda().isBlank()) ? dto.getMoneda().toUpperCase() : "MXN";
+        String tipoCuenta = Optional.ofNullable(dto.getTipoCuenta())
+                .filter(Predicate.not(String::isBlank))
+                .map(String::toUpperCase)
+                .orElse("DEBITO");
+        String moneda = Optional.ofNullable(dto.getMoneda())
+                .filter(Predicate.not(String::isBlank))
+                .map(String::toUpperCase)
+                .orElse("MXN");
 
         CuentaEntity cuenta = CuentaEntity.builder()
                 .cliente(cliente)
@@ -93,23 +95,21 @@ public class CuentaServiceImpl implements CuentaService {
                 .build();
 
         CuentaEntity cuentaGuardada = cuentaRepository.save(cuenta);
-        log.info("Cuenta bancaria creada exitosamente con numero: {}", cuentaGuardada.getNumeroCuenta());
+        log.info("Cuenta bancaria creada exitosamente con número: {}", cuentaGuardada.getNumeroCuenta());
 
         return mapearCuentaADto(cuentaGuardada);
     }
 
-    // Consulta cuenta bancaria por numero de cuenta
     @Override
     @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
     public CuentaBancariaDto obtenerCuentaPorNumero(String numeroCuenta) {
         String cuentaLimpia = numeroCuenta.trim();
         CuentaEntity cuenta = cuentaRepository.findByNumeroCuenta(cuentaLimpia)
-                .orElseThrow(() -> new CuentaNoEncontradaException("Cuenta bancaria no encontrada con numero " + cuentaLimpia));
+                .orElseThrow(() -> new CuentaNoEncontradaException("Cuenta bancaria no encontrada con número " + cuentaLimpia));
 
         return mapearCuentaADto(cuenta);
     }
 
-    // Búsqueda dinámica y paginada de cuentas bancarias mediante Record inmutable
     @Override
     @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
     public PaginaResponseRecord<CuentaBancariaDto> buscarCuentasPaginadas(CuentaConsultaFiltroRecord filtro) {
@@ -117,22 +117,28 @@ public class CuentaServiceImpl implements CuentaService {
         Pageable pageable = PageRequest.of(filtro.page(), filtro.size(), sort);
 
         Specification<CuentaEntity> spec = (root, query, cb) -> {
-            List<Predicate> predicates = new ArrayList<>();
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
 
-            if (filtro.numeroCuenta() != null) {
-                predicates.add(cb.equal(root.get("numeroCuenta"), filtro.numeroCuenta()));
-            }
-            if (filtro.clienteId() != null) {
-                predicates.add(cb.equal(root.get("cliente").get("id"), filtro.clienteId()));
-            }
-            if (filtro.estatus() != null) {
-                predicates.add(cb.equal(cb.upper(root.get("estatus")), filtro.estatus()));
-            }
-            if (Boolean.TRUE.equals(filtro.soloActivas())) {
-                predicates.add(cb.equal(cb.upper(root.get("estatus")), "ACTIVA"));
-            }
+            Optional.ofNullable(filtro.numeroCuenta())
+                    .filter(Predicate.not(String::isBlank))
+                    .map(nc -> cb.equal(root.get("numeroCuenta"), nc))
+                    .ifPresent(predicates::add);
 
-            return cb.and(predicates.toArray(new Predicate[0]));
+            Optional.ofNullable(filtro.clienteId())
+                    .map(cid -> cb.equal(root.get("cliente").get("id"), cid))
+                    .ifPresent(predicates::add);
+
+            Optional.ofNullable(filtro.estatus())
+                    .filter(Predicate.not(String::isBlank))
+                    .map(est -> cb.equal(cb.upper(root.get("estatus")), est))
+                    .ifPresent(predicates::add);
+
+            Optional.ofNullable(filtro.soloActivas())
+                    .filter(Boolean::booleanValue)
+                    .map(act -> cb.equal(cb.upper(root.get("estatus")), "ACTIVA"))
+                    .ifPresent(predicates::add);
+
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
         };
 
         Page<CuentaBancariaDto> dtoPage = cuentaRepository.findAll(spec, pageable)
@@ -141,13 +147,12 @@ public class CuentaServiceImpl implements CuentaService {
         return PaginaResponseRecord.de(dtoPage);
     }
 
-    // Consulta de saldo disponible de una cuenta
     @Override
     @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
     public SaldoCuentaDto obtenerSaldoCuenta(String numeroCuenta) {
         String cuentaLimpia = numeroCuenta.trim();
         CuentaEntity cuenta = cuentaRepository.findByNumeroCuenta(cuentaLimpia)
-                .orElseThrow(() -> new CuentaNoEncontradaException("Cuenta bancaria no encontrada con numero " + cuentaLimpia));
+                .orElseThrow(() -> new CuentaNoEncontradaException("Cuenta bancaria no encontrada con número " + cuentaLimpia));
 
         ClienteEntity cliente = cuenta.getCliente();
         String titular = cliente.getNombre() + " " + cliente.getApellidoPaterno() + " " + cliente.getApellidoMaterno();
@@ -163,50 +168,43 @@ public class CuentaServiceImpl implements CuentaService {
                 .build();
     }
 
-    // Actualizacion parcial de una cuenta (saldo, estatus, tipo) sin modificar numero de cuenta
     @Override
     @Transactional(transactionManager = "sfTransactionManager")
     public CuentaBancariaDto actualizarCuenta(String numeroCuenta, CuentaActualizacionRequestDto dto) {
+        // Validación Fail-Fast en Record
+        CuentaActualizacionRequestRecord.de(dto);
+
         String cuentaLimpia = numeroCuenta.trim();
         CuentaEntity cuenta = cuentaRepository.findByNumeroCuenta(cuentaLimpia)
-                .orElseThrow(() -> new CuentaNoEncontradaException("Cuenta bancaria no encontrada con numero " + cuentaLimpia));
+                .orElseThrow(() -> new CuentaNoEncontradaException("Cuenta bancaria no encontrada con número " + cuentaLimpia));
 
-        // Regla: No se puede modificar una cuenta de un cliente dado de baja (inactivo)
-        if (!Boolean.TRUE.equals(cuenta.getCliente().getActivo())) {
-            throw new ReglaNegocioException("No se puede modificar una cuenta bancaria perteneciente a un cliente inactivo");
-        }
+        // Reglas de negocio declarativas
+        DeclarativeAssertUtil.asegurar(Boolean.TRUE.equals(cuenta.getCliente().getActivo()),
+                "No se puede modificar una cuenta bancaria perteneciente a un cliente inactivo");
 
-        // Regla: No se puede modificar una cuenta cancelada
-        if ("CANCELADA".equalsIgnoreCase(cuenta.getEstatus())) {
-            throw new ReglaNegocioException("No se puede modificar una cuenta bancaria en estatus CANCELADA");
-        }
+        DeclarativeAssertUtil.prohibir("CANCELADA".equalsIgnoreCase(cuenta.getEstatus()),
+                "No se puede modificar una cuenta bancaria en estatus CANCELADA");
 
-        // Regla: No se puede modificar una cuenta inactiva sin reactivarla primero
-        if ("INACTIVA".equalsIgnoreCase(cuenta.getEstatus())
-                && (dto.getEstatus() == null || !"ACTIVA".equalsIgnoreCase(dto.getEstatus()))) {
-            throw new ReglaNegocioException("No se puede modificar una cuenta inactiva sin reactivarla primero a estatus ACTIVA");
-        }
+        DeclarativeAssertUtil.prohibir("INACTIVA".equalsIgnoreCase(cuenta.getEstatus())
+                        && (dto.getEstatus() == null || !"ACTIVA".equalsIgnoreCase(dto.getEstatus())),
+                "No se puede modificar una cuenta inactiva sin reactivarla primero a estatus ACTIVA");
 
-        // Regla: No se puede activar una cuenta si el cliente esta inactivo
-        if (dto.getEstatus() != null && dto.getEstatus().equalsIgnoreCase("ACTIVA")) {
-            if (!Boolean.TRUE.equals(cuenta.getCliente().getActivo())) {
-                throw new ReglaNegocioException("Solo los clientes activos pueden tener cuentas activas");
-            }
-            cuenta.setEstatus("ACTIVA");
-        } else if (dto.getEstatus() != null && !dto.getEstatus().isBlank()) {
-            cuenta.setEstatus(dto.getEstatus().toUpperCase());
-        }
+        Optional.ofNullable(dto.getEstatus())
+                .filter(Predicate.not(String::isBlank))
+                .ifPresent(est -> {
+                    Optional.of(est)
+                            .filter("ACTIVA"::equalsIgnoreCase)
+                            .ifPresent(a -> DeclarativeAssertUtil.asegurar(Boolean.TRUE.equals(cuenta.getCliente().getActivo()),
+                                    "Solo los clientes activos pueden tener cuentas activas"));
+                    cuenta.setEstatus(est.toUpperCase());
+                });
 
-        if (dto.getTipoCuenta() != null && !dto.getTipoCuenta().isBlank()) {
-            cuenta.setTipoCuenta(dto.getTipoCuenta().toUpperCase());
-        }
+        Optional.ofNullable(dto.getTipoCuenta())
+                .filter(Predicate.not(String::isBlank))
+                .ifPresent(tc -> cuenta.setTipoCuenta(tc.toUpperCase()));
 
-        if (dto.getSaldo() != null) {
-            if (dto.getSaldo().compareTo(BigDecimal.ZERO) < 0) {
-                throw new ReglaNegocioException("El saldo no puede ser negativo");
-            }
-            cuenta.setSaldo(dto.getSaldo());
-        }
+        Optional.ofNullable(dto.getSaldo())
+                .ifPresent(cuenta::setSaldo);
 
         CuentaEntity cuentaActualizada = cuentaRepository.save(cuenta);
         log.info("Cuenta bancaria {} actualizada exitosamente", numeroCuenta);
@@ -214,21 +212,17 @@ public class CuentaServiceImpl implements CuentaService {
         return mapearCuentaADto(cuentaActualizada);
     }
 
-    // Genera un numero de cuenta bancaria unico de 10 digitos
     private String generarNumeroCuentaUnico() {
         String cuenta;
         int intentos = 0;
         do {
             cuenta = generadorCuentaUtil.generarNumeroCuenta();
             intentos++;
-            if (intentos > 10) {
-                throw new ReglaNegocioException("No se pudo generar un numero de cuenta unico");
-            }
+            DeclarativeAssertUtil.prohibir(intentos > 10, "No se pudo generar un número de cuenta único");
         } while (cuentaRepository.existsByNumeroCuenta(cuenta));
         return cuenta;
     }
 
-    // Mapea CuentaEntity a CuentaBancariaDto
     private CuentaBancariaDto mapearCuentaADto(CuentaEntity cuenta) {
         return CuentaBancariaDto.builder()
                 .idCuenta(cuenta.getId())

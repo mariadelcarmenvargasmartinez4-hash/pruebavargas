@@ -4,15 +4,24 @@ import com.proyecto.servicios.entity.catalogo.SexoEntity;
 import com.proyecto.servicios.exception.CatalogoDuplicadoException;
 import com.proyecto.servicios.exception.CatalogoNoEncontradoException;
 import com.proyecto.servicios.model.catalogo.CatalogoActualizacionDto;
+import com.proyecto.servicios.model.catalogo.CatalogoConsultaFiltroRecord;
 import com.proyecto.servicios.model.catalogo.CatalogoCreacionDto;
 import com.proyecto.servicios.model.catalogo.CatalogoItemDto;
+import com.proyecto.servicios.model.common.PaginaResponseRecord;
 import com.proyecto.servicios.repositorys.catalogo.SexoRepository;
 import com.proyecto.servicios.service.SexoService;
+import com.proyecto.servicios.util.DeclarativeAssertUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Predicate;
@@ -26,6 +35,34 @@ public class SexoServiceImpl implements SexoService {
 
     public SexoServiceImpl(SexoRepository sexoRepository) {
         this.sexoRepository = sexoRepository;
+    }
+
+    @Override
+    @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
+    public PaginaResponseRecord<CatalogoItemDto> buscarPaginado(CatalogoConsultaFiltroRecord filtro) {
+        Sort sort = Sort.by(Sort.Direction.fromString(filtro.sortDir()), filtro.sortBy());
+        Pageable pageable = PageRequest.of(filtro.page(), filtro.size(), sort);
+
+        Specification<SexoEntity> spec = (root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+
+            Optional.ofNullable(filtro.soloActivos())
+                    .filter(Boolean::booleanValue)
+                    .map(a -> cb.isTrue(root.get("activo")))
+                    .ifPresent(predicates::add);
+
+            Optional.ofNullable(filtro.busqueda())
+                    .filter(Predicate.not(String::isBlank))
+                    .map(b -> cb.or(
+                            cb.like(cb.lower(root.get("codigo")), "%" + b.toLowerCase() + "%"),
+                            cb.like(cb.lower(root.get("descripcion")), "%" + b.toLowerCase() + "%")))
+                    .ifPresent(predicates::add);
+
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+
+        Page<CatalogoItemDto> page = sexoRepository.findAll(spec, pageable).map(this::mapearADto);
+        return PaginaResponseRecord.de(page);
     }
 
     @Override
@@ -65,15 +102,15 @@ public class SexoServiceImpl implements SexoService {
     @Override
     @Transactional(transactionManager = "sfTransactionManager")
     public CatalogoItemDto crear(CatalogoCreacionDto dto) {
+        dto.toRecord(); // Validación temprana Fail-Fast en Record
         String codigo = dto.getCodigo().trim().toUpperCase();
         String descripcion = dto.getDescripcion().trim().toUpperCase();
 
-        if (sexoRepository.existsByCodigoIgnoreCase(codigo)) {
-            throw new CatalogoDuplicadoException("El código de sexo '" + codigo + "' ya está registrado");
-        }
-        if (sexoRepository.existsByDescripcionIgnoreCase(descripcion)) {
-            throw new CatalogoDuplicadoException("La descripción de sexo '" + descripcion + "' ya está registrada");
-        }
+        DeclarativeAssertUtil.prohibir(sexoRepository.existsByCodigoIgnoreCase(codigo),
+                () -> new CatalogoDuplicadoException("El código de sexo '" + codigo + "' ya está registrado"));
+
+        DeclarativeAssertUtil.prohibir(sexoRepository.existsByDescripcionIgnoreCase(descripcion),
+                () -> new CatalogoDuplicadoException("La descripción de sexo '" + descripcion + "' ya está registrada"));
 
         SexoEntity entidad = SexoEntity.builder()
                 .codigo(codigo)
@@ -88,6 +125,7 @@ public class SexoServiceImpl implements SexoService {
     @Override
     @Transactional(transactionManager = "sfTransactionManager")
     public CatalogoItemDto actualizar(Long id, CatalogoActualizacionDto dto) {
+        dto.toRecord(); // Validación temprana Fail-Fast en Record
         SexoEntity entidad = sexoRepository.findById(id)
                 .orElseThrow(() -> new CatalogoNoEncontradoException("Elemento de sexo no encontrado con ID " + id));
 
@@ -96,9 +134,8 @@ public class SexoServiceImpl implements SexoService {
                 .filter(Predicate.not(String::isBlank))
                 .ifPresent(desc -> {
                     String descUpper = desc.toUpperCase();
-                    if (!descUpper.equalsIgnoreCase(entidad.getDescripcion()) && sexoRepository.existsByDescripcionIgnoreCase(descUpper)) {
-                        throw new CatalogoDuplicadoException("La descripción '" + descUpper + "' ya pertenece a otro registro");
-                    }
+                    DeclarativeAssertUtil.prohibir(!descUpper.equalsIgnoreCase(entidad.getDescripcion()) && sexoRepository.existsByDescripcionIgnoreCase(descUpper),
+                            () -> new CatalogoDuplicadoException("La descripción '" + descUpper + "' ya pertenece a otro registro"));
                     entidad.setDescripcion(descUpper);
                 });
 
@@ -119,12 +156,13 @@ public class SexoServiceImpl implements SexoService {
     @Override
     @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
     public boolean esValidoYActivo(String valor) {
-        if (valor == null || valor.isBlank()) {
-            return false;
-        }
-        String limpio = valor.trim().toUpperCase();
-        return sexoRepository.existsByCodigoIgnoreCaseAndActivoTrue(limpio)
-                || sexoRepository.existsByDescripcionIgnoreCaseAndActivoTrue(limpio);
+        return Optional.ofNullable(valor)
+                .map(String::trim)
+                .filter(Predicate.not(String::isBlank))
+                .map(String::toUpperCase)
+                .map(limpio -> sexoRepository.existsByCodigoIgnoreCaseAndActivoTrue(limpio)
+                        || sexoRepository.existsByDescripcionIgnoreCaseAndActivoTrue(limpio))
+                .orElse(false);
     }
 
     private CatalogoItemDto mapearADto(SexoEntity entity) {

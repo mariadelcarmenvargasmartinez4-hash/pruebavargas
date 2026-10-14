@@ -2,6 +2,7 @@ package com.proyecto.servicios.repositorys.cliente;
 
 import com.proyecto.servicios.entity.cliente.UsuarioAccesoEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -9,7 +10,7 @@ import java.util.Optional;
 
 // Repositorio JPA para operaciones con la entidad UsuarioAccesoEntity
 @Repository
-public interface UsuarioAccesoRepository extends JpaRepository<UsuarioAccesoEntity, Long> {
+public interface UsuarioAccesoRepository extends JpaRepository<UsuarioAccesoEntity, Long>, JpaSpecificationExecutor<UsuarioAccesoEntity> {
 
     boolean existsByUsername(String username);
 

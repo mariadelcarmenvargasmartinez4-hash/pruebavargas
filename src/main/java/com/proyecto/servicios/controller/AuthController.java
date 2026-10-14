@@ -23,6 +23,7 @@ public class AuthController {
 
     @PostMapping(value = "/login", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<LoginResponseDto> iniciarSesion(@Valid @RequestBody LoginRequestDto request) {
+        request.toRecord();
         return ResponseEntity.ok(authService.iniciarSesion(request));
     }
-}
+}

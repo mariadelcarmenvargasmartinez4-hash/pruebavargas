@@ -28,6 +28,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Optional;
+
 import java.util.List;
 
 // Controlador REST para la gestion de cuentas bancarias
@@ -54,9 +56,8 @@ public class CuentaController {
             @ApiResponse(responseCode = "404", description = "Cliente no encontrado")
     })
     public ResponseEntity<CuentaBancariaDto> crearCuenta(@Valid @RequestBody CuentaCreacionRequestDto requestDto) {
-        if (requestDto.getClienteId() != null) {
-            securityService.validarAccesoCliente(requestDto.getClienteId());
-        }
+        requestDto.toRecord(); // Validación temprana Fail-Fast en Record
+        Optional.ofNullable(requestDto.getClienteId()).ifPresent(securityService::validarAccesoCliente);
         CuentaBancariaDto cuenta = cuentaService.crearCuenta(requestDto);
         return ResponseEntity.status(HttpStatus.CREATED).body(cuenta);
     }
@@ -66,6 +67,7 @@ public class CuentaController {
     @Operation(summary = "Consultar cuentas con filtros dinámicos y paginación", 
                description = "Búsqueda dinámica paginada de cuentas bancarias mediante Record inmutable. Permite manipular número de página (pack/page) y tamaño de página (size)")
     public ResponseEntity<GenericResponse<PaginaResponseRecord<CuentaBancariaDto>>> consultarCuentas(
+            @Parameter(description = "Número de pack de registros solicitado (alias nativo de página)", example = "0") @RequestParam(value = "pack", required = false) Integer pack,
             @Parameter(description = "Número de página/pack (inicia en 0)", example = "0") @RequestParam(defaultValue = "0") int page,
             @Parameter(description = "Cantidad de elementos por página (tamaño)", example = "10") @RequestParam(defaultValue = "10") int size,
             @Parameter(description = "Campo de ordenación", example = "id") @RequestParam(defaultValue = "id") String sortBy,
@@ -75,15 +77,11 @@ public class CuentaController {
             @Parameter(description = "Estatus de la cuenta (ACTIVA, INACTIVA, BLOQUEADA, CANCELADA)") @RequestParam(required = false) String estatus,
             @Parameter(description = "Listar solo cuentas activas (true/false)") @RequestParam(required = false) Boolean soloActivas) {
 
-        if (numeroCuenta != null && !numeroCuenta.isBlank()) {
-            securityService.validarAccesoCuenta(numeroCuenta);
-        }
-        if (clienteId != null) {
-            securityService.validarAccesoCliente(clienteId);
-        }
+        Optional.ofNullable(numeroCuenta).filter(java.util.function.Predicate.not(String::isBlank)).ifPresent(securityService::validarAccesoCuenta);
+        Optional.ofNullable(clienteId).ifPresent(securityService::validarAccesoCliente);
 
         CuentaConsultaFiltroRecord filtro = new CuentaConsultaFiltroRecord(
-                numeroCuenta, clienteId, estatus, soloActivas, page, size, sortBy, sortDir);
+                numeroCuenta, clienteId, estatus, soloActivas, page, size, sortBy, sortDir, pack);
 
         PaginaResponseRecord<CuentaBancariaDto> pagina = cuentaService.buscarCuentasPaginadas(filtro);
         return ResponseEntity.ok(GenericResponse.exito(pagina, "Consulta paginada de cuentas realizada con éxito"));
@@ -129,6 +127,7 @@ public class CuentaController {
     public ResponseEntity<CuentaBancariaDto> actualizarParcialCuenta(
             @Parameter(description = "Número de cuenta bancaria a actualizar", example = "4815162342") @PathVariable String numeroCuenta,
             @Valid @RequestBody CuentaActualizacionRequestDto requestDto) {
+        requestDto.toRecord(); // Validación temprana Fail-Fast en Record
         securityService.validarAccesoCuenta(numeroCuenta);
         return ResponseEntity.ok(cuentaService.actualizarCuenta(numeroCuenta, requestDto));
     }
@@ -138,6 +137,7 @@ public class CuentaController {
     public ResponseEntity<CuentaBancariaDto> actualizarCuenta(
             @Parameter(description = "Número de cuenta bancaria a actualizar", example = "4815162342") @PathVariable String numeroCuenta,
             @Valid @RequestBody CuentaActualizacionRequestDto requestDto) {
+        requestDto.toRecord(); // Validación temprana Fail-Fast en Record
         securityService.validarAccesoCuenta(numeroCuenta);
         return ResponseEntity.ok(cuentaService.actualizarCuenta(numeroCuenta, requestDto));
     }

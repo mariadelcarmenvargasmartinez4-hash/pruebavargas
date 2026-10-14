@@ -22,4 +22,9 @@ public class CatalogoActualizacionDto {
 
     @Schema(description = "Estatus activo del elemento", example = "true")
     private Boolean activo;
+
+    public CatalogoActualizacionRecord toRecord() {
+        return CatalogoActualizacionRecord.de(this);
+    }
 }
+
