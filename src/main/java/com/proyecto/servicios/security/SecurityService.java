@@ -69,21 +69,96 @@ public class SecurityService {
                                         || a.getAuthority().equalsIgnoreCase("ROLE_EMPLEADO")))
                         .ifPresent(auth -> {
                             String username = auth.getName();
-                            Optional<UsuarioAccesoEntity> usuarioOpt = usuarioRepository.findByUsername(username);
-                            Optional<CuentaEntity> cuentaOpt = cuentaRepository.findByNumeroCuenta(nc);
+                            UsuarioAccesoEntity usuario = usuarioRepository.findByUsername(username)
+                                    .orElseThrow(() -> new AccessDeniedException("Acceso denegado: Usuario no encontrado"));
 
-                            cuentaOpt.ifPresent(cuenta -> usuarioOpt.ifPresent(usuario -> {
+                            cuentaRepository.findByNumeroCuenta(nc).ifPresent(cuenta -> {
                                 ClienteEntity titular = cuenta.getCliente();
                                 ClienteEntity clienteAutenticado = usuario.getCliente();
 
                                 DeclarativeAssertUtil.asegurar(
                                         titular != null && clienteAutenticado != null && titular.getId().equals(clienteAutenticado.getId()),
                                         () -> {
-                                            log.warn("Violación de autorización en cuenta: Usuario '{}' intentó acceder a la cuenta {}",
+                                            log.warn("Violación de autorización en cuenta (IDOR detectado): Usuario '{}' intentó acceder a la cuenta {}",
                                                     username, nc);
                                             return new AccessDeniedException("Acceso denegado: No tiene permisos para consultar o manipular una cuenta de otro usuario");
                                         });
-                            }));
+                            });
+                        }));
+    }
+
+    public void validarAccesoCurp(String curp) {
+        Optional.ofNullable(curp)
+                .map(String::trim)
+                .filter(c -> !c.isBlank())
+                .ifPresent(c -> Optional.ofNullable(SecurityContextHolder.getContext().getAuthentication())
+                        .filter(Authentication::isAuthenticated)
+                        .filter(auth -> !"anonymousUser".equals(auth.getPrincipal()))
+                        .filter(auth -> auth.getAuthorities().stream()
+                                .noneMatch(a -> a.getAuthority().equalsIgnoreCase("ROLE_ADMIN")
+                                        || a.getAuthority().equalsIgnoreCase("ROLE_EMPLEADO")))
+                        .ifPresent(auth -> {
+                            String username = auth.getName();
+                            UsuarioAccesoEntity usuario = usuarioRepository.findByUsername(username)
+                                    .orElseThrow(() -> new AccessDeniedException("Acceso denegado: Usuario no encontrado"));
+
+                            DeclarativeAssertUtil.asegurar(
+                                    usuario.getCliente() != null && c.equalsIgnoreCase(usuario.getCliente().getCurp()),
+                                    () -> {
+                                        log.warn("Violación de autorización en CURP (IDOR detectado): Usuario '{}' intentó consultar CURP {}",
+                                                username, c);
+                                        return new AccessDeniedException("Acceso denegado: No tiene permisos para consultar información de otro CURP");
+                                    });
+                        }));
+    }
+
+    public void validarAccesoRfc(String rfc) {
+        Optional.ofNullable(rfc)
+                .map(String::trim)
+                .filter(r -> !r.isBlank())
+                .ifPresent(r -> Optional.ofNullable(SecurityContextHolder.getContext().getAuthentication())
+                        .filter(Authentication::isAuthenticated)
+                        .filter(auth -> !"anonymousUser".equals(auth.getPrincipal()))
+                        .filter(auth -> auth.getAuthorities().stream()
+                                .noneMatch(a -> a.getAuthority().equalsIgnoreCase("ROLE_ADMIN")
+                                        || a.getAuthority().equalsIgnoreCase("ROLE_EMPLEADO")))
+                        .ifPresent(auth -> {
+                            String username = auth.getName();
+                            UsuarioAccesoEntity usuario = usuarioRepository.findByUsername(username)
+                                    .orElseThrow(() -> new AccessDeniedException("Acceso denegado: Usuario no encontrado"));
+
+                            DeclarativeAssertUtil.asegurar(
+                                    usuario.getCliente() != null && r.equalsIgnoreCase(usuario.getCliente().getRfc()),
+                                    () -> {
+                                        log.warn("Violación de autorización en RFC (IDOR detectado): Usuario '{}' intentó consultar RFC {}",
+                                                username, r);
+                                        return new AccessDeniedException("Acceso denegado: No tiene permisos para consultar información de otro RFC");
+                                    });
+                        }));
+    }
+
+    public void validarAccesoCorreo(String correo) {
+        Optional.ofNullable(correo)
+                .map(String::trim)
+                .filter(co -> !co.isBlank())
+                .ifPresent(co -> Optional.ofNullable(SecurityContextHolder.getContext().getAuthentication())
+                        .filter(Authentication::isAuthenticated)
+                        .filter(auth -> !"anonymousUser".equals(auth.getPrincipal()))
+                        .filter(auth -> auth.getAuthorities().stream()
+                                .noneMatch(a -> a.getAuthority().equalsIgnoreCase("ROLE_ADMIN")
+                                        || a.getAuthority().equalsIgnoreCase("ROLE_EMPLEADO")))
+                        .ifPresent(auth -> {
+                            String username = auth.getName();
+                            UsuarioAccesoEntity usuario = usuarioRepository.findByUsername(username)
+                                    .orElseThrow(() -> new AccessDeniedException("Acceso denegado: Usuario no encontrado"));
+
+                            DeclarativeAssertUtil.asegurar(
+                                    usuario.getCliente() != null && co.equalsIgnoreCase(usuario.getCliente().getCorreoElectronico()),
+                                    () -> {
+                                        log.warn("Violación de autorización en Correo (IDOR detectado): Usuario '{}' intentó consultar correo {}",
+                                                username, co);
+                                        return new AccessDeniedException("Acceso denegado: No tiene permisos para consultar información de otro correo electrónico");
+                                    });
                         }));
     }
 }

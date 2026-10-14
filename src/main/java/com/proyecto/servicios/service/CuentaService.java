@@ -27,4 +27,10 @@ public interface CuentaService {
 
     // Actualización de cuenta bancaria respetando reglas de baja lógica y cliente activo
     CuentaBancariaDto actualizarCuenta(String numeroCuenta, CuentaActualizacionRequestDto requestDto);
+
+    // Baja lógica de cuenta bancaria (cancela la cuenta)
+    void desactivarCuenta(String numeroCuenta);
+
+    // Reactivación de cuenta bancaria (solo si el cliente está activo)
+    CuentaBancariaDto reactivarCuenta(String numeroCuenta);
 }

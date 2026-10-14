@@ -82,6 +82,11 @@ public class ClienteController {
             @Parameter(description = "Fecha inicio para rango de registro (AAAA-MM-DDTHH:mm:ss)") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime fechaInicio,
             @Parameter(description = "Fecha fin para rango de registro (AAAA-MM-DDTHH:mm:ss)") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime fechaFin) {
 
+        java.util.Optional.ofNullable(numeroCuenta).filter(java.util.function.Predicate.not(String::isBlank)).ifPresent(securityService::validarAccesoCuenta);
+        java.util.Optional.ofNullable(curp).filter(java.util.function.Predicate.not(String::isBlank)).ifPresent(securityService::validarAccesoCurp);
+        java.util.Optional.ofNullable(rfc).filter(java.util.function.Predicate.not(String::isBlank)).ifPresent(securityService::validarAccesoRfc);
+        java.util.Optional.ofNullable(correo).filter(java.util.function.Predicate.not(String::isBlank)).ifPresent(securityService::validarAccesoCorreo);
+
         ClienteConsultaFiltroRecord filtro = new ClienteConsultaFiltroRecord(
                 nombre, apellidoPaterno, apellidoMaterno, curp, rfc, correo, numeroCuenta, soloActivos, fechaInicio, fechaFin, page, size, sortBy, sortDir, pack);
 

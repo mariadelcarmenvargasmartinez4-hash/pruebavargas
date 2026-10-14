@@ -18,6 +18,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -140,5 +141,20 @@ public class CuentaController {
         requestDto.toRecord(); // Validación temprana Fail-Fast en Record
         securityService.validarAccesoCuenta(numeroCuenta);
         return ResponseEntity.ok(cuentaService.actualizarCuenta(numeroCuenta, requestDto));
+    }
+
+    // Baja lógica de cuenta bancaria
+    @DeleteMapping(value = "/{numeroCuenta}")
+    @Operation(summary = "Baja lógica de una cuenta bancaria", description = "Cancela la cuenta bancaria (estatus CANCELADA) sin eliminar físicamente el registro en base de datos. Valida permisos de autorización IDOR.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "204", description = "Cuenta cancelada/dada de baja exitosamente"),
+            @ApiResponse(responseCode = "403", description = "Acceso denegado a cuentas de otros clientes"),
+            @ApiResponse(responseCode = "404", description = "Cuenta bancaria no encontrada")
+    })
+    public ResponseEntity<Void> desactivarCuenta(
+            @Parameter(description = "Número de cuenta bancaria a cancelar", example = "4815162342") @PathVariable String numeroCuenta) {
+        securityService.validarAccesoCuenta(numeroCuenta);
+        cuentaService.desactivarCuenta(numeroCuenta);
+        return ResponseEntity.noContent().build();
     }
 }

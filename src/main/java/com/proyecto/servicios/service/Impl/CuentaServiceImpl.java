@@ -150,17 +150,12 @@ public class CuentaServiceImpl implements CuentaService {
     @Override
     @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
     public SaldoCuentaDto obtenerSaldoCuenta(String numeroCuenta) {
-        String cuentaLimpia = numeroCuenta.trim();
-        CuentaEntity cuenta = cuentaRepository.findByNumeroCuenta(cuentaLimpia)
-                .orElseThrow(() -> new CuentaNoEncontradaException("Cuenta bancaria no encontrada con número " + cuentaLimpia));
-
-        ClienteEntity cliente = cuenta.getCliente();
-        String titular = cliente.getNombre() + " " + cliente.getApellidoPaterno() + " " + cliente.getApellidoMaterno();
+        CuentaBancariaDto cuenta = obtenerCuentaPorNumero(numeroCuenta);
 
         return SaldoCuentaDto.builder()
                 .numeroCuenta(cuenta.getNumeroCuenta())
                 .clabe(cuenta.getClabe())
-                .titular(titular.trim())
+                .titular(cuenta.getTitular())
                 .saldo(cuenta.getSaldo())
                 .moneda(cuenta.getMoneda())
                 .estatus(cuenta.getEstatus())
@@ -223,7 +218,47 @@ public class CuentaServiceImpl implements CuentaService {
         return cuenta;
     }
 
+    @Override
+    @Transactional(transactionManager = "sfTransactionManager")
+    public void desactivarCuenta(String numeroCuenta) {
+        String cuentaLimpia = numeroCuenta.trim();
+        CuentaEntity cuenta = cuentaRepository.findByNumeroCuenta(cuentaLimpia)
+                .orElseThrow(() -> new CuentaNoEncontradaException("Cuenta bancaria no encontrada con número " + cuentaLimpia));
+
+        DeclarativeAssertUtil.prohibir("CANCELADA".equalsIgnoreCase(cuenta.getEstatus()),
+                () -> new ReglaNegocioException("La cuenta bancaria " + cuentaLimpia + " ya se encuentra cancelada"));
+
+        cuenta.setEstatus("CANCELADA");
+        cuentaRepository.save(cuenta);
+        log.info("Cuenta bancaria {} dada de baja lógicamente con estatus CANCELADA", cuentaLimpia);
+    }
+
+    @Override
+    @Transactional(transactionManager = "sfTransactionManager")
+    public CuentaBancariaDto reactivarCuenta(String numeroCuenta) {
+        String cuentaLimpia = numeroCuenta.trim();
+        CuentaEntity cuenta = cuentaRepository.findByNumeroCuenta(cuentaLimpia)
+                .orElseThrow(() -> new CuentaNoEncontradaException("Cuenta bancaria no encontrada con número " + cuentaLimpia));
+
+        DeclarativeAssertUtil.asegurar(Boolean.TRUE.equals(cuenta.getCliente().getActivo()),
+                "No se puede reactivar una cuenta perteneciente a un cliente inactivo");
+
+        DeclarativeAssertUtil.prohibir("ACTIVA".equalsIgnoreCase(cuenta.getEstatus()),
+                () -> new ReglaNegocioException("La cuenta bancaria " + cuentaLimpia + " ya se encuentra activa"));
+
+        cuenta.setEstatus("ACTIVA");
+        CuentaEntity guardada = cuentaRepository.save(cuenta);
+        log.info("Cuenta bancaria {} reactivada exitosamente a estatus ACTIVA", cuentaLimpia);
+        return mapearCuentaADto(guardada);
+    }
+
     private CuentaBancariaDto mapearCuentaADto(CuentaEntity cuenta) {
+        String titular = Optional.ofNullable(cuenta.getCliente())
+                .map(c -> (Optional.ofNullable(c.getNombre()).orElse("") + " " +
+                        Optional.ofNullable(c.getApellidoPaterno()).orElse("") + " " +
+                        Optional.ofNullable(c.getApellidoMaterno()).orElse("")).trim())
+                .orElse(null);
+
         return CuentaBancariaDto.builder()
                 .idCuenta(cuenta.getId())
                 .numeroCuenta(cuenta.getNumeroCuenta())
@@ -233,6 +268,8 @@ public class CuentaServiceImpl implements CuentaService {
                 .moneda(cuenta.getMoneda())
                 .estatus(cuenta.getEstatus())
                 .fechaApertura(cuenta.getFechaApertura())
+                .clienteId(Optional.ofNullable(cuenta.getCliente()).map(ClienteEntity::getId).orElse(null))
+                .titular(titular)
                 .build();
     }
 }

@@ -40,4 +40,10 @@ public class CuentaBancariaDto {
 
     @Schema(description = "Fecha de apertura")
     private LocalDateTime fechaApertura;
+
+    @Schema(description = "Identificador del cliente titular", example = "1")
+    private Long clienteId;
+
+    @Schema(description = "Nombre completo del titular", example = "Juan Perez Lopez")
+    private String titular;
 }
