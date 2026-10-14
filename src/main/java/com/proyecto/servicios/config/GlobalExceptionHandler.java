@@ -18,10 +18,11 @@ import com.proyecto.servicios.exception.ReglaNegocioException;
 import com.proyecto.servicios.exception.RfcDuplicadoException;
 import com.proyecto.servicios.exception.UsuarioInactivoException;
 import com.proyecto.servicios.exception.UsuarioNoEncontradoException;
+import com.proyecto.servicios.model.common.GenericResponse;
+import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
@@ -36,35 +37,40 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
-// Manejador global de excepciones para estructurar respuestas HTTP estandarizadas
+/**
+ * Manejador global de excepciones estandarizado con GenericResponse y buenas prácticas.
+ * Retorna siempre código HTTP 200 con el mensaje detonado correspondiente a la validación.
+ */
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    // 1. Manejo de errores de validación de campos (@Valid) con el formato exacto solicitado
+    // 1. Manejo de errores de validación de campos (@Valid)
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Map<String, Object>> handleValidationExceptions(MethodArgumentNotValidException ex) {
+    public ResponseEntity<GenericResponse<Object>> handleValidationExceptions(MethodArgumentNotValidException ex) {
         Map<String, String> errores = new LinkedHashMap<>();
         for (FieldError error : ex.getBindingResult().getFieldErrors()) {
             errores.put(error.getField(), error.getDefaultMessage());
         }
 
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("codigo", HttpStatus.BAD_REQUEST.value());
-        body.put("mensaje", "Error de validacion de campos");
-        body.put("errores", errores);
+        // Obtener el mensaje específico detonado por la validación
+        String mensajeDetonado = ex.getBindingResult().getFieldErrors().stream()
+                .map(FieldError::getDefaultMessage)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse("Error de validacion de campos");
 
-        log.warn("Error de validacion de campos: {}", errores);
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+        log.warn("Validación detonada: {} -> Detalle: {}", mensajeDetonado, errores);
+        return ResponseEntity.ok(GenericResponse.error(200, mensajeDetonado, errores));
     }
 
-    // 2. Manejo de errores de malformación JSON o tipos incompatibles (evita HTTP 500 y extrae el campo exacto)
+    // 2. Manejo de errores de malformación JSON o tipos incompatibles
     @ExceptionHandler(HttpMessageNotReadableException.class)
-    public ResponseEntity<Map<String, Object>> handleHttpMessageNotReadable(HttpMessageNotReadableException ex) {
+    public ResponseEntity<GenericResponse<Object>> handleHttpMessageNotReadable(HttpMessageNotReadableException ex) {
         String mensaje = "El cuerpo de la peticion contiene datos mal formados o con formato invalido";
         Throwable cause = ex.getCause();
 
-        if (cause instanceof JsonParseException jpe) {
+        if (cause instanceof JsonParseException) {
             mensaje = "La sintaxis del JSON es invalida o esta incompleta (payload corrupto o conexion interrumpida)";
         } else if (cause instanceof UnrecognizedPropertyException upe) {
             String campo = upe.getPropertyName();
@@ -99,136 +105,118 @@ public class GlobalExceptionHandler {
             }
         }
 
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("codigo", HttpStatus.BAD_REQUEST.value());
-        body.put("mensaje", mensaje);
-
         log.warn("Error de lectura JSON capturado: {}", mensaje);
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+        return ResponseEntity.ok(GenericResponse.error(200, mensaje));
     }
 
-    // 3. Manejo de valores numéricos gigantescos o fuera de rango en base de datos (evita HTTP 500)
+    // 3. Manejo de valores numéricos gigantescos o violaciones de integridad
     @ExceptionHandler(DataIntegrityViolationException.class)
-    public ResponseEntity<Map<String, Object>> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+    public ResponseEntity<GenericResponse<Object>> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
         String mensaje = "El valor proporcionado excede el límite máximo permitido o viola una restricción de integridad";
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("codigo", HttpStatus.BAD_REQUEST.value());
-        body.put("mensaje", mensaje);
-
-        log.warn("Violacion de integridad de datos / desbordamiento numerico: {}", ex.getMessage());
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+        log.warn("Violacion de integridad de datos: {}", ex.getMessage());
+        return ResponseEntity.ok(GenericResponse.error(200, mensaje));
     }
 
     // 4. Manejo de violaciones de restricciones en parámetros
     @ExceptionHandler(ConstraintViolationException.class)
-    public ResponseEntity<Map<String, Object>> handleConstraintViolation(ConstraintViolationException ex) {
+    public ResponseEntity<GenericResponse<Object>> handleConstraintViolation(ConstraintViolationException ex) {
         Map<String, String> errores = new LinkedHashMap<>();
         ex.getConstraintViolations().forEach(cv -> {
             String propiedad = cv.getPropertyPath().toString();
             errores.put(propiedad, cv.getMessage());
         });
 
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("codigo", HttpStatus.BAD_REQUEST.value());
-        body.put("mensaje", "Error de validacion de campos");
-        body.put("errores", errores);
+        String mensajeDetonado = ex.getConstraintViolations().stream()
+                .map(ConstraintViolation::getMessage)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse("Error de validacion de campos");
 
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+        return ResponseEntity.ok(GenericResponse.error(200, mensajeDetonado, errores));
     }
 
-    // Excepción personalizada: CURP duplicada
+    // Excepciones de negocio personalizadas
     @ExceptionHandler(CurpDuplicadaException.class)
-    public ResponseEntity<Map<String, Object>> handleCurpDuplicadaException(CurpDuplicadaException ex) {
-        return buildErrorResponse(HttpStatus.CONFLICT, ex.getMessage());
+    public ResponseEntity<GenericResponse<Object>> handleCurpDuplicadaException(CurpDuplicadaException ex) {
+        return buildErrorResponse(ex.getMessage());
     }
 
-    // Excepción personalizada: RFC duplicado
     @ExceptionHandler(RfcDuplicadoException.class)
-    public ResponseEntity<Map<String, Object>> handleRfcDuplicadoException(RfcDuplicadoException ex) {
-        return buildErrorResponse(HttpStatus.CONFLICT, ex.getMessage());
+    public ResponseEntity<GenericResponse<Object>> handleRfcDuplicadoException(RfcDuplicadoException ex) {
+        return buildErrorResponse(ex.getMessage());
     }
 
-    // Excepción personalizada: Cliente ya registrado
     @ExceptionHandler(ClienteYaRegistradoException.class)
-    public ResponseEntity<Map<String, Object>> handleClienteYaRegistradoException(ClienteYaRegistradoException ex) {
-        return buildErrorResponse(HttpStatus.CONFLICT, ex.getMessage());
+    public ResponseEntity<GenericResponse<Object>> handleClienteYaRegistradoException(ClienteYaRegistradoException ex) {
+        return buildErrorResponse(ex.getMessage());
     }
 
-    // Excepción personalizada: Cliente no encontrado
     @ExceptionHandler(ClienteNoEncontradoException.class)
-    public ResponseEntity<Map<String, Object>> handleClienteNoEncontradoException(ClienteNoEncontradoException ex) {
-        return buildErrorResponse(HttpStatus.NOT_FOUND, ex.getMessage());
+    public ResponseEntity<GenericResponse<Object>> handleClienteNoEncontradoException(ClienteNoEncontradoException ex) {
+        return buildErrorResponse(ex.getMessage());
     }
 
-    // Excepción personalizada: Cuenta no encontrada
     @ExceptionHandler(CuentaNoEncontradaException.class)
-    public ResponseEntity<Map<String, Object>> handleCuentaNoEncontradaException(CuentaNoEncontradaException ex) {
-        return buildErrorResponse(HttpStatus.NOT_FOUND, ex.getMessage());
+    public ResponseEntity<GenericResponse<Object>> handleCuentaNoEncontradaException(CuentaNoEncontradaException ex) {
+        return buildErrorResponse(ex.getMessage());
     }
 
-    // Excepción personalizada: Error de Regla de Negocio
     @ExceptionHandler(ReglaNegocioException.class)
-    public ResponseEntity<Map<String, Object>> handleReglaNegocioException(ReglaNegocioException ex) {
-        return buildErrorResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
+    public ResponseEntity<GenericResponse<Object>> handleReglaNegocioException(ReglaNegocioException ex) {
+        return buildErrorResponse(ex.getMessage());
     }
 
     @ExceptionHandler(CredencialesInvalidasException.class)
-    public ResponseEntity<Map<String, Object>> handleCredencialesInvalidas(CredencialesInvalidasException ex) {
-        return buildErrorResponse(HttpStatus.UNAUTHORIZED, ex.getMessage());
+    public ResponseEntity<GenericResponse<Object>> handleCredencialesInvalidas(CredencialesInvalidasException ex) {
+        return buildErrorResponse(ex.getMessage());
     }
 
     @ExceptionHandler(UsuarioInactivoException.class)
-    public ResponseEntity<Map<String, Object>> handleUsuarioInactivo(UsuarioInactivoException ex) {
-        return buildErrorResponse(HttpStatus.FORBIDDEN, ex.getMessage());
+    public ResponseEntity<GenericResponse<Object>> handleUsuarioInactivo(UsuarioInactivoException ex) {
+        return buildErrorResponse(ex.getMessage());
     }
 
     @ExceptionHandler(UsuarioNoEncontradoException.class)
-    public ResponseEntity<Map<String, Object>> handleUsuarioNoEncontrado(UsuarioNoEncontradoException ex) {
-        return buildErrorResponse(HttpStatus.NOT_FOUND, ex.getMessage());
+    public ResponseEntity<GenericResponse<Object>> handleUsuarioNoEncontrado(UsuarioNoEncontradoException ex) {
+        return buildErrorResponse(ex.getMessage());
     }
 
     @ExceptionHandler(CorreoDuplicadoException.class)
-    public ResponseEntity<Map<String, Object>> handleCorreoDuplicado(CorreoDuplicadoException ex) {
-        return buildErrorResponse(HttpStatus.CONFLICT, ex.getMessage());
+    public ResponseEntity<GenericResponse<Object>> handleCorreoDuplicado(CorreoDuplicadoException ex) {
+        return buildErrorResponse(ex.getMessage());
     }
 
     @ExceptionHandler(PasswordInvalidaException.class)
-    public ResponseEntity<Map<String, Object>> handlePasswordInvalida(PasswordInvalidaException ex) {
-        return buildErrorResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
+    public ResponseEntity<GenericResponse<Object>> handlePasswordInvalida(PasswordInvalidaException ex) {
+        return buildErrorResponse(ex.getMessage());
     }
 
     @ExceptionHandler(CatalogoNoEncontradoException.class)
-    public ResponseEntity<Map<String, Object>> handleCatalogoNoEncontrado(CatalogoNoEncontradoException ex) {
-        return buildErrorResponse(HttpStatus.NOT_FOUND, ex.getMessage());
+    public ResponseEntity<GenericResponse<Object>> handleCatalogoNoEncontrado(CatalogoNoEncontradoException ex) {
+        return buildErrorResponse(ex.getMessage());
     }
 
     @ExceptionHandler(CatalogoDuplicadoException.class)
-    public ResponseEntity<Map<String, Object>> handleCatalogoDuplicado(CatalogoDuplicadoException ex) {
-        return buildErrorResponse(HttpStatus.CONFLICT, ex.getMessage());
+    public ResponseEntity<GenericResponse<Object>> handleCatalogoDuplicado(CatalogoDuplicadoException ex) {
+        return buildErrorResponse(ex.getMessage());
     }
 
-    // Excepciones ResponseStatusException
     @ExceptionHandler(ResponseStatusException.class)
-    public ResponseEntity<Map<String, Object>> handleResponseStatusException(ResponseStatusException ex) {
-        return buildErrorResponse(HttpStatus.valueOf(ex.getStatusCode().value()), ex.getReason());
+    public ResponseEntity<GenericResponse<Object>> handleResponseStatusException(ResponseStatusException ex) {
+        String mensaje = ex.getReason() != null ? ex.getReason() : ex.getMessage();
+        return buildErrorResponse(mensaje);
     }
 
     // Excepciones no controladas (fallback seguro)
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<Map<String, Object>> handleGeneralException(Exception ex) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("codigo", HttpStatus.INTERNAL_SERVER_ERROR.value());
-        body.put("mensaje", "Error interno en el servidor: " + ex.getMessage());
-
+    public ResponseEntity<GenericResponse<Object>> handleGeneralException(Exception ex) {
+        String mensaje = "Error interno en el servidor: " + ex.getMessage();
         log.error("Excepcion no controlada: ", ex);
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
+        return buildErrorResponse(mensaje);
     }
 
-    private ResponseEntity<Map<String, Object>> buildErrorResponse(HttpStatus status, String mensaje) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("codigo", status.value());
-        body.put("mensaje", mensaje);
-        log.warn("Respuesta de error [{}]: {}", status.value(), mensaje);
-        return ResponseEntity.status(status).body(body);
+    private ResponseEntity<GenericResponse<Object>> buildErrorResponse(String mensaje) {
+        log.warn("Respuesta de error [codigo: 200]: {}", mensaje);
+        return ResponseEntity.ok(GenericResponse.error(200, mensaje));
     }
 }

@@ -81,7 +81,9 @@ public class ClienteControllerValidationIntegrationTest {
         mockMvc.perform(post("/clientes")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(dto)))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.codigo").value(200))
+                .andExpect(jsonPath("$.mensaje", containsString("no puede iniciar con espacios")))
                 .andExpect(jsonPath("$.errores.nombre", containsString("no puede iniciar con espacios")));
     }
 
@@ -93,7 +95,9 @@ public class ClienteControllerValidationIntegrationTest {
         mockMvc.perform(post("/clientes")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(dto)))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.codigo").value(200))
+                .andExpect(jsonPath("$.mensaje", containsString("no puede terminar con espacios")))
                 .andExpect(jsonPath("$.errores.nombre", containsString("no puede terminar con espacios")));
     }
 
@@ -105,7 +109,9 @@ public class ClienteControllerValidationIntegrationTest {
         mockMvc.perform(post("/clientes")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(dto)))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.codigo").value(200))
+                .andExpect(jsonPath("$.mensaje", containsString("no puede iniciar con espacios")))
                 .andExpect(jsonPath("$.errores.segundoNombre", containsString("no puede iniciar con espacios")));
     }
 
@@ -117,7 +123,9 @@ public class ClienteControllerValidationIntegrationTest {
         mockMvc.perform(post("/clientes")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(dto)))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.codigo").value(200))
+                .andExpect(jsonPath("$.mensaje", containsString("no puede terminar con espacios")))
                 .andExpect(jsonPath("$.errores.segundoNombre", containsString("no puede terminar con espacios")));
     }
 
@@ -129,7 +137,9 @@ public class ClienteControllerValidationIntegrationTest {
         mockMvc.perform(post("/clientes")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(dto)))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.codigo").value(200))
+                .andExpect(jsonPath("$.mensaje", containsString("debe tener al menos 2 caracteres")))
                 .andExpect(jsonPath("$.errores.segundoNombre", containsString("debe tener al menos 2 caracteres")));
     }
 
@@ -141,7 +151,9 @@ public class ClienteControllerValidationIntegrationTest {
         mockMvc.perform(post("/clientes")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(dto)))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.codigo").value(200))
+                .andExpect(jsonPath("$.mensaje", containsString("no puede exceder 50 caracteres")))
                 .andExpect(jsonPath("$.errores.segundoNombre", containsString("no puede exceder 50 caracteres")));
     }
 }

@@ -3,6 +3,7 @@ package com.proyecto.servicios.config;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import com.fasterxml.jackson.databind.exc.MismatchedInputException;
+import com.proyecto.servicios.model.common.GenericResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -33,29 +34,28 @@ public class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void testHandleValidationExceptions_FormatoExacto() {
+    void testHandleValidationExceptions_Retorna200YMensajeDetonado() {
         MethodArgumentNotValidException ex = mock(MethodArgumentNotValidException.class);
         BindingResult bindingResult = mock(BindingResult.class);
 
-        FieldError errorNombre = new FieldError("dto", "nombre", "El nombre no debe iniciar ni terminar con espacios en blanco");
+        FieldError errorNombre = new FieldError("dto", "nombre", "El nombre no puede iniciar con espacios");
         FieldError errorSegundo = new FieldError("dto", "segundoNombre", "No se permiten multiples espacios internos consecutivos");
         FieldError errorApellido = new FieldError("dto", "apellidoMaterno", "El apellido debe tener al menos 2 caracteres reales");
 
         when(ex.getBindingResult()).thenReturn(bindingResult);
         when(bindingResult.getFieldErrors()).thenReturn(List.of(errorNombre, errorSegundo, errorApellido));
 
-        ResponseEntity<Map<String, Object>> response = exceptionHandler.handleValidationExceptions(ex);
+        ResponseEntity<GenericResponse<Object>> response = exceptionHandler.handleValidationExceptions(ex);
 
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        Map<String, Object> body = response.getBody();
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        GenericResponse<Object> body = response.getBody();
         assertNotNull(body);
-        assertEquals(400, body.get("codigo"));
-        assertEquals("Error de validacion de campos", body.get("mensaje"));
+        assertEquals(200, body.getCodigo());
+        assertEquals("El nombre no puede iniciar con espacios", body.getMensaje());
 
-        @SuppressWarnings("unchecked")
-        Map<String, String> errores = (Map<String, String>) body.get("errores");
+        Map<String, String> errores = body.getErrores();
         assertNotNull(errores);
-        assertEquals("El nombre no debe iniciar ni terminar con espacios en blanco", errores.get("nombre"));
+        assertEquals("El nombre no puede iniciar con espacios", errores.get("nombre"));
         assertEquals("No se permiten multiples espacios internos consecutivos", errores.get("segundoNombre"));
         assertEquals("El apellido debe tener al menos 2 caracteres reales", errores.get("apellidoMaterno"));
     }
@@ -70,13 +70,13 @@ public class GlobalExceptionHandlerTest {
 
         HttpMessageNotReadableException ex = new HttpMessageNotReadableException("JSON parse error", cause, null);
 
-        ResponseEntity<Map<String, Object>> response = exceptionHandler.handleHttpMessageNotReadable(ex);
+        ResponseEntity<GenericResponse<Object>> response = exceptionHandler.handleHttpMessageNotReadable(ex);
 
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        Map<String, Object> body = response.getBody();
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        GenericResponse<Object> body = response.getBody();
         assertNotNull(body);
-        assertEquals(400, body.get("codigo"));
-        assertEquals("El campo 'ingresoMensual' debe ser un valor numerico decimal valido", body.get("mensaje"));
+        assertEquals(200, body.getCodigo());
+        assertEquals("El campo 'ingresoMensual' debe ser un valor numerico decimal valido", body.getMensaje());
     }
 
     @Test
@@ -89,26 +89,26 @@ public class GlobalExceptionHandlerTest {
 
         HttpMessageNotReadableException ex = new HttpMessageNotReadableException("JSON parse error", cause, null);
 
-        ResponseEntity<Map<String, Object>> response = exceptionHandler.handleHttpMessageNotReadable(ex);
+        ResponseEntity<GenericResponse<Object>> response = exceptionHandler.handleHttpMessageNotReadable(ex);
 
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        Map<String, Object> body = response.getBody();
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        GenericResponse<Object> body = response.getBody();
         assertNotNull(body);
-        assertEquals(400, body.get("codigo"));
-        assertEquals("El campo 'telefonoMovil' no debe ser un arreglo u objeto", body.get("mensaje"));
+        assertEquals(200, body.getCodigo());
+        assertEquals("El campo 'telefonoMovil' no debe ser un arreglo u objeto", body.getMensaje());
     }
 
     @Test
     void testHandleDataIntegrityViolation_EvitaHttp500() {
         DataIntegrityViolationException ex = new DataIntegrityViolationException("NumericValueOutOfRange: A result was out of range");
 
-        ResponseEntity<Map<String, Object>> response = exceptionHandler.handleDataIntegrityViolation(ex);
+        ResponseEntity<GenericResponse<Object>> response = exceptionHandler.handleDataIntegrityViolation(ex);
 
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        Map<String, Object> body = response.getBody();
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        GenericResponse<Object> body = response.getBody();
         assertNotNull(body);
-        assertEquals(400, body.get("codigo"));
-        assertTrue(((String) body.get("mensaje")).contains("límite"));
+        assertEquals(200, body.getCodigo());
+        assertTrue(body.getMensaje().contains("límite"));
     }
 
     @Test
@@ -118,13 +118,13 @@ public class GlobalExceptionHandlerTest {
 
         HttpMessageNotReadableException ex = new HttpMessageNotReadableException("JSON parse error", cause, null);
 
-        ResponseEntity<Map<String, Object>> response = exceptionHandler.handleHttpMessageNotReadable(ex);
+        ResponseEntity<GenericResponse<Object>> response = exceptionHandler.handleHttpMessageNotReadable(ex);
 
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        Map<String, Object> body = response.getBody();
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        GenericResponse<Object> body = response.getBody();
         assertNotNull(body);
-        assertEquals(400, body.get("codigo"));
-        assertEquals("El campo 'rol' no es una propiedad permitida en la peticion (propiedad no reconocida)", body.get("mensaje"));
+        assertEquals(200, body.getCodigo());
+        assertEquals("El campo 'rol' no es una propiedad permitida en la peticion (propiedad no reconocida)", body.getMensaje());
     }
 
     @Test
@@ -133,12 +133,12 @@ public class GlobalExceptionHandlerTest {
 
         HttpMessageNotReadableException ex = new HttpMessageNotReadableException("JSON parse error", cause, null);
 
-        ResponseEntity<Map<String, Object>> response = exceptionHandler.handleHttpMessageNotReadable(ex);
+        ResponseEntity<GenericResponse<Object>> response = exceptionHandler.handleHttpMessageNotReadable(ex);
 
-        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
-        Map<String, Object> body = response.getBody();
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        GenericResponse<Object> body = response.getBody();
         assertNotNull(body);
-        assertEquals(400, body.get("codigo"));
-        assertEquals("La sintaxis del JSON es invalida o esta incompleta (payload corrupto o conexion interrumpida)", body.get("mensaje"));
+        assertEquals(200, body.getCodigo());
+        assertEquals("La sintaxis del JSON es invalida o esta incompleta (payload corrupto o conexion interrumpida)", body.getMensaje());
     }
 }
