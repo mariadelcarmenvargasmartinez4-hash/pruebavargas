@@ -1,8 +1,11 @@
 package com.proyecto.servicios.controller;
 
 import com.proyecto.servicios.model.cliente.ClienteActualizacionRequestDto;
+import com.proyecto.servicios.model.cliente.ClienteConsultaFiltroRecord;
 import com.proyecto.servicios.model.cliente.ClienteRegistroRequestDto;
 import com.proyecto.servicios.model.cliente.ClienteRegistroResponseDto;
+import com.proyecto.servicios.model.common.GenericResponse;
+import com.proyecto.servicios.model.common.PaginaResponseRecord;
 import com.proyecto.servicios.service.ClienteService;
 import com.proyecto.servicios.security.SecurityService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -32,7 +35,7 @@ import java.util.List;
 // Controlador REST para la gestion de clientes personas fisicas
 @RestController
 @RequestMapping("/clientes")
-@Tag(name = "Clientes", description = "Operaciones de registro, consultas dinámicas con filtros combinables, actualización y baja lógica de clientes")
+@Tag(name = "Clientes", description = "Operaciones de registro, consultas dinámicas paginadas, actualización y baja lógica de clientes")
 public class ClienteController {
 
     private final ClienteService clienteService;
@@ -57,11 +60,15 @@ public class ClienteController {
         return ResponseEntity.status(HttpStatus.CREATED).body(respuesta);
     }
 
-    // Consultar clientes mediante búsqueda dinámica unificada con filtros opcionales
+    // Consultar clientes mediante búsqueda dinámica unificada y paginada con Record
     @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
-    @Operation(summary = "Consultar clientes con filtros dinámicos opcionales", 
-               description = "Permite realizar búsquedas dinámicas combinando filtros opcionales por nombre, apellidos, CURP, RFC, correo, número de cuenta, rango de fechas y estatus activo sin duplicidad")
-    public ResponseEntity<List<ClienteRegistroResponseDto>> consultarClientes(
+    @Operation(summary = "Consultar clientes con filtros dinámicos y paginación", 
+               description = "Búsqueda dinámica paginada de clientes. Permite manipular el número de página (pack/page) y el tamaño de página (size)")
+    public ResponseEntity<GenericResponse<PaginaResponseRecord<ClienteRegistroResponseDto>>> consultarClientes(
+            @Parameter(description = "Número de página/pack (inicia en 0)", example = "0") @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "Cantidad de elementos por página (tamaño)", example = "10") @RequestParam(defaultValue = "10") int size,
+            @Parameter(description = "Campo de ordenación", example = "id") @RequestParam(defaultValue = "id") String sortBy,
+            @Parameter(description = "Dirección de orden (ASC / DESC)", example = "DESC") @RequestParam(defaultValue = "DESC") String sortDir,
             @Parameter(description = "Filtrar por nombre") @RequestParam(required = false) String nombre,
             @Parameter(description = "Filtrar por apellido paterno") @RequestParam(required = false) String apellidoPaterno,
             @Parameter(description = "Filtrar por apellido materno") @RequestParam(required = false) String apellidoMaterno,
@@ -73,9 +80,11 @@ public class ClienteController {
             @Parameter(description = "Fecha inicio para rango de registro (AAAA-MM-DDTHH:mm:ss)") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime fechaInicio,
             @Parameter(description = "Fecha fin para rango de registro (AAAA-MM-DDTHH:mm:ss)") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime fechaFin) {
 
-        List<ClienteRegistroResponseDto> resultados = clienteService.buscarClientesDinamicos(
-                nombre, apellidoPaterno, apellidoMaterno, curp, rfc, correo, numeroCuenta, soloActivos, fechaInicio, fechaFin);
-        return ResponseEntity.ok(resultados);
+        ClienteConsultaFiltroRecord filtro = new ClienteConsultaFiltroRecord(
+                nombre, apellidoPaterno, apellidoMaterno, curp, rfc, correo, numeroCuenta, soloActivos, fechaInicio, fechaFin, page, size, sortBy, sortDir);
+
+        PaginaResponseRecord<ClienteRegistroResponseDto> pagina = clienteService.buscarClientesPaginados(filtro);
+        return ResponseEntity.ok(GenericResponse.exito(pagina, "Consulta paginada de clientes realizada con éxito"));
     }
 
     // Consultar un cliente por su identificador (con control de autorización IDOR)

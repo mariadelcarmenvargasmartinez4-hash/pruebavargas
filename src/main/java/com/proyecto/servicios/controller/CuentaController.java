@@ -1,7 +1,10 @@
 package com.proyecto.servicios.controller;
 
 import com.proyecto.servicios.model.cliente.CuentaBancariaDto;
+import com.proyecto.servicios.model.common.GenericResponse;
+import com.proyecto.servicios.model.common.PaginaResponseRecord;
 import com.proyecto.servicios.model.cuenta.CuentaActualizacionRequestDto;
+import com.proyecto.servicios.model.cuenta.CuentaConsultaFiltroRecord;
 import com.proyecto.servicios.model.cuenta.CuentaCreacionRequestDto;
 import com.proyecto.servicios.model.cuenta.SaldoCuentaDto;
 import com.proyecto.servicios.service.CuentaService;
@@ -30,7 +33,7 @@ import java.util.List;
 // Controlador REST para la gestion de cuentas bancarias
 @RestController
 @RequestMapping("/cuentas")
-@Tag(name = "Cuentas", description = "Operaciones de creación, consulta unificada con filtros dinámicos, saldo y actualización de cuentas bancarias")
+@Tag(name = "Cuentas", description = "Operaciones de creación, consulta unificada paginada, saldo y actualización de cuentas bancarias")
 public class CuentaController {
 
     private final CuentaService cuentaService;
@@ -58,11 +61,15 @@ public class CuentaController {
         return ResponseEntity.status(HttpStatus.CREATED).body(cuenta);
     }
 
-    // Endpoint unificado de consulta y búsqueda dinámica de cuentas bancarias
+    // Endpoint unificado de consulta y búsqueda dinámica paginada de cuentas bancarias con Record
     @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
-    @Operation(summary = "Consultar cuentas con filtros dinámicos opcionales", 
-               description = "Endpoint unificado para realizar búsquedas dinámicas de cuentas bancarias por número de cuenta, clienteId, estatus o solo cuentas activas evitando duplicidad de endpoints")
-    public ResponseEntity<List<CuentaBancariaDto>> consultarCuentas(
+    @Operation(summary = "Consultar cuentas con filtros dinámicos y paginación", 
+               description = "Búsqueda dinámica paginada de cuentas bancarias mediante Record inmutable. Permite manipular número de página (pack/page) y tamaño de página (size)")
+    public ResponseEntity<GenericResponse<PaginaResponseRecord<CuentaBancariaDto>>> consultarCuentas(
+            @Parameter(description = "Número de página/pack (inicia en 0)", example = "0") @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "Cantidad de elementos por página (tamaño)", example = "10") @RequestParam(defaultValue = "10") int size,
+            @Parameter(description = "Campo de ordenación", example = "id") @RequestParam(defaultValue = "id") String sortBy,
+            @Parameter(description = "Dirección de orden (ASC / DESC)", example = "DESC") @RequestParam(defaultValue = "DESC") String sortDir,
             @Parameter(description = "Número de cuenta bancaria (10 dígitos)") @RequestParam(required = false) String numeroCuenta,
             @Parameter(description = "Identificador del cliente") @RequestParam(required = false) Long clienteId,
             @Parameter(description = "Estatus de la cuenta (ACTIVA, INACTIVA, BLOQUEADA, CANCELADA)") @RequestParam(required = false) String estatus,
@@ -75,8 +82,11 @@ public class CuentaController {
             securityService.validarAccesoCliente(clienteId);
         }
 
-        List<CuentaBancariaDto> cuentas = cuentaService.buscarCuentasDinamicas(numeroCuenta, clienteId, estatus, soloActivas);
-        return ResponseEntity.ok(cuentas);
+        CuentaConsultaFiltroRecord filtro = new CuentaConsultaFiltroRecord(
+                numeroCuenta, clienteId, estatus, soloActivas, page, size, sortBy, sortDir);
+
+        PaginaResponseRecord<CuentaBancariaDto> pagina = cuentaService.buscarCuentasPaginadas(filtro);
+        return ResponseEntity.ok(GenericResponse.exito(pagina, "Consulta paginada de cuentas realizada con éxito"));
     }
 
     // Consultar una cuenta por número de cuenta (con control de autorización IDOR)

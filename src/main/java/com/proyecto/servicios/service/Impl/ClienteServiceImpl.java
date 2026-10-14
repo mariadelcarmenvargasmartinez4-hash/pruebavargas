@@ -28,7 +28,13 @@ import com.proyecto.servicios.service.SexoService;
 import com.proyecto.servicios.util.GeneradorCuentaBancariaUtil;
 import com.proyecto.servicios.util.MetricasTextoUtil;
 import lombok.extern.slf4j.Slf4j;
+import com.proyecto.servicios.model.cliente.ClienteConsultaFiltroRecord;
+import com.proyecto.servicios.model.common.PaginaResponseRecord;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -139,18 +145,53 @@ public class ClienteServiceImpl implements ClienteService {
 
     @Override
     @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
-    public List<ClienteRegistroResponseDto> listarClientes() {
-        return clienteRepository.findAll().stream()
-                .map(this::construirRespuestaCompleta)
-                .collect(Collectors.toList());
-    }
+    public PaginaResponseRecord<ClienteRegistroResponseDto> buscarClientesPaginados(ClienteConsultaFiltroRecord filtro) {
+        Sort sort = Sort.by(Sort.Direction.fromString(filtro.sortDir()), filtro.sortBy());
+        Pageable pageable = PageRequest.of(filtro.page(), filtro.size(), sort);
 
-    @Override
-    @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
-    public List<ClienteRegistroResponseDto> listarClientesActivos() {
-        return clienteRepository.findByActivoTrue().stream()
-                .map(this::construirRespuestaCompleta)
-                .collect(Collectors.toList());
+        Specification<ClienteEntity> spec = (root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+
+            if (filtro.nombre() != null) {
+                predicates.add(cb.like(cb.lower(root.get("nombre")), "%" + filtro.nombre().toLowerCase() + "%"));
+            }
+            if (filtro.apellidoPaterno() != null) {
+                predicates.add(cb.like(cb.lower(root.get("apellidoPaterno")), "%" + filtro.apellidoPaterno().toLowerCase() + "%"));
+            }
+            if (filtro.apellidoMaterno() != null) {
+                predicates.add(cb.like(cb.lower(root.get("apellidoMaterno")), "%" + filtro.apellidoMaterno().toLowerCase() + "%"));
+            }
+            if (filtro.curp() != null) {
+                predicates.add(cb.equal(cb.upper(root.get("curp")), filtro.curp()));
+            }
+            if (filtro.rfc() != null) {
+                predicates.add(cb.equal(cb.upper(root.get("rfc")), filtro.rfc()));
+            }
+            if (filtro.correo() != null) {
+                predicates.add(cb.equal(cb.lower(root.get("correoElectronico")), filtro.correo()));
+            }
+            if (filtro.numeroCuenta() != null) {
+                Join<ClienteEntity, CuentaEntity> cuentasJoin = root.join("cuentas", JoinType.INNER);
+                predicates.add(cb.equal(cuentasJoin.get("numeroCuenta"), filtro.numeroCuenta()));
+            }
+            if (Boolean.TRUE.equals(filtro.soloActivos())) {
+                predicates.add(cb.isTrue(root.get("activo")));
+            }
+            if (filtro.fechaInicio() != null && filtro.fechaFin() != null) {
+                predicates.add(cb.between(root.get("fechaCreacion"), filtro.fechaInicio(), filtro.fechaFin()));
+            } else if (filtro.fechaInicio() != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("fechaCreacion"), filtro.fechaInicio()));
+            } else if (filtro.fechaFin() != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("fechaCreacion"), filtro.fechaFin()));
+            }
+
+            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
+        };
+
+        Page<ClienteRegistroResponseDto> dtoPage = clienteRepository.findAll(spec, pageable)
+                .map(this::construirRespuestaCompleta);
+
+        return PaginaResponseRecord.de(dtoPage);
     }
 
     @Override
@@ -168,118 +209,6 @@ public class ClienteServiceImpl implements ClienteService {
         return clienteRepository.findByCurp(curpLimpio)
                 .map(this::construirRespuestaCompleta)
                 .orElseThrow(() -> new ClienteNoEncontradoException("Cliente no encontrado con CURP " + curpLimpio));
-    }
-
-    @Override
-    @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
-    public ClienteRegistroResponseDto obtenerClientePorRfc(String rfc) {
-        String rfcLimpio = rfc.trim().toUpperCase();
-        return clienteRepository.findByRfc(rfcLimpio)
-                .map(this::construirRespuestaCompleta)
-                .orElseThrow(() -> new ClienteNoEncontradoException("Cliente no encontrado con RFC " + rfcLimpio));
-    }
-
-    @Override
-    @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
-    public ClienteRegistroResponseDto obtenerClientePorCorreo(String correo) {
-        String correoLimpio = correo.trim().toLowerCase();
-        return clienteRepository.findByCorreoElectronico(correoLimpio)
-                .map(this::construirRespuestaCompleta)
-                .orElseThrow(() -> new ClienteNoEncontradoException("Cliente no encontrado con correo " + correoLimpio));
-    }
-
-    @Override
-    @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
-    public ClienteRegistroResponseDto obtenerClientePorNumeroCuenta(String numeroCuenta) {
-        String cuentaLimpia = numeroCuenta.trim();
-        CuentaEntity cuenta = cuentaRepository.findByNumeroCuenta(cuentaLimpia)
-                .orElseThrow(() -> new CuentaNoEncontradaException("Cuenta bancaria no encontrada con número " + cuentaLimpia));
-
-        return construirRespuestaCompleta(cuenta.getCliente());
-    }
-
-    @Override
-    @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
-    public List<ClienteRegistroResponseDto> buscarClientesPorNombre(String nombre) {
-        return clienteRepository.findByNombreContainingIgnoreCase(nombre.trim()).stream()
-                .map(this::construirRespuestaCompleta)
-                .collect(Collectors.toList());
-    }
-
-    @Override
-    @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
-    public List<ClienteRegistroResponseDto> buscarClientesPorApellidoPaterno(String apellidoPaterno) {
-        return clienteRepository.findByApellidoPaternoContainingIgnoreCase(apellidoPaterno.trim()).stream()
-                .map(this::construirRespuestaCompleta)
-                .collect(Collectors.toList());
-    }
-
-    @Override
-    @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
-    public List<ClienteRegistroResponseDto> buscarClientesPorApellidoMaterno(String apellidoMaterno) {
-        return clienteRepository.findByApellidoMaternoContainingIgnoreCase(apellidoMaterno.trim()).stream()
-                .map(this::construirRespuestaCompleta)
-                .collect(Collectors.toList());
-    }
-
-    @Override
-    @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
-    public List<ClienteRegistroResponseDto> buscarClientesPorRangoFechas(LocalDateTime fechaInicio, LocalDateTime fechaFin) {
-        return clienteRepository.findByFechaCreacionBetween(fechaInicio, fechaFin).stream()
-                .map(this::construirRespuestaCompleta)
-                .collect(Collectors.toList());
-    }
-
-    @Override
-    @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
-    public List<ClienteRegistroResponseDto> buscarClientesDinamicos(
-            String nombre, String apellidoPaterno, String apellidoMaterno,
-            String curp, String rfc, String correo, String numeroCuenta,
-            Boolean soloActivos, LocalDateTime fechaInicio, LocalDateTime fechaFin) {
-
-        Specification<ClienteEntity> spec = (root, query, cb) -> {
-            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
-
-            if (nombre != null && !nombre.isBlank()) {
-                predicates.add(cb.like(cb.lower(root.get("nombre")), "%" + nombre.trim().toLowerCase() + "%"));
-            }
-            if (apellidoPaterno != null && !apellidoPaterno.isBlank()) {
-                predicates.add(cb.like(cb.lower(root.get("apellidoPaterno")), "%" + apellidoPaterno.trim().toLowerCase() + "%"));
-            }
-            if (apellidoMaterno != null && !apellidoMaterno.isBlank()) {
-                predicates.add(cb.like(cb.lower(root.get("apellidoMaterno")), "%" + apellidoMaterno.trim().toLowerCase() + "%"));
-            }
-            if (curp != null && !curp.isBlank()) {
-                predicates.add(cb.equal(cb.upper(root.get("curp")), curp.trim().toUpperCase()));
-            }
-            if (rfc != null && !rfc.isBlank()) {
-                predicates.add(cb.equal(cb.upper(root.get("rfc")), rfc.trim().toUpperCase()));
-            }
-            if (correo != null && !correo.isBlank()) {
-                predicates.add(cb.equal(cb.lower(root.get("correoElectronico")), correo.trim().toLowerCase()));
-            }
-            if (numeroCuenta != null && !numeroCuenta.isBlank()) {
-                Join<ClienteEntity, CuentaEntity> cuentasJoin = root.join("cuentas", JoinType.INNER);
-                predicates.add(cb.equal(cuentasJoin.get("numeroCuenta"), numeroCuenta.trim()));
-            }
-            if (Boolean.TRUE.equals(soloActivos)) {
-                predicates.add(cb.isTrue(root.get("activo")));
-            }
-            if (fechaInicio != null && fechaFin != null) {
-                predicates.add(cb.between(root.get("fechaCreacion"), fechaInicio, fechaFin));
-            } else if (fechaInicio != null) {
-                predicates.add(cb.greaterThanOrEqualTo(root.get("fechaCreacion"), fechaInicio));
-            } else if (fechaFin != null) {
-                predicates.add(cb.lessThanOrEqualTo(root.get("fechaCreacion"), fechaFin));
-            }
-
-            return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
-        };
-
-        return clienteRepository.findAll(spec).stream()
-                .distinct()
-                .map(this::construirRespuestaCompleta)
-                .collect(Collectors.toList());
     }
 
     @Override

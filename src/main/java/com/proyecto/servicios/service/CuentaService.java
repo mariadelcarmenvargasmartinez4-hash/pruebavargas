@@ -1,36 +1,30 @@
 package com.proyecto.servicios.service;
 
 import com.proyecto.servicios.model.cliente.CuentaBancariaDto;
+import com.proyecto.servicios.model.common.PaginaResponseRecord;
 import com.proyecto.servicios.model.cuenta.CuentaActualizacionRequestDto;
+import com.proyecto.servicios.model.cuenta.CuentaConsultaFiltroRecord;
 import com.proyecto.servicios.model.cuenta.CuentaCreacionRequestDto;
 import com.proyecto.servicios.model.cuenta.SaldoCuentaDto;
 
-import java.util.List;
-
-// Interfaz de servicio para creacion, consulta y actualizacion de cuentas bancarias
+/**
+ * Interfaz limpia y desacoplada para gestión de cuentas bancarias.
+ * Sin sobrecargas ni consultas redundantes: unifica la búsqueda mediante paginación y records.
+ */
 public interface CuentaService {
 
     // Crea una cuenta bancaria asociada a un cliente activo
     CuentaBancariaDto crearCuenta(CuentaCreacionRequestDto requestDto);
 
-    // Consulta cuenta bancaria por numero de cuenta
+    // Consulta unificada y paginada con filtros opcionales dinámicos mediante Record inmutable
+    PaginaResponseRecord<CuentaBancariaDto> buscarCuentasPaginadas(CuentaConsultaFiltroRecord filtro);
+
+    // Consulta cuenta bancaria por número de cuenta
     CuentaBancariaDto obtenerCuentaPorNumero(String numeroCuenta);
-
-    // Consulta cuentas bancarias asociadas a un cliente
-    List<CuentaBancariaDto> obtenerCuentasPorClienteId(Long clienteId);
-
-    // Consulta cuentas bancarias por estatus
-    List<CuentaBancariaDto> obtenerCuentasPorEstatus(String estatus);
-
-    // Consulta cuentas bancarias activas
-    List<CuentaBancariaDto> obtenerCuentasActivas();
 
     // Consulta saldo disponible de una cuenta
     SaldoCuentaDto obtenerSaldoCuenta(String numeroCuenta);
 
-    // Búsqueda dinámica unificada de cuentas bancarias por filtros opcionales
-    List<CuentaBancariaDto> buscarCuentasDinamicas(String numeroCuenta, Long clienteId, String estatus, Boolean soloActivas);
-
-    // Actualizacion parcial de una cuenta (saldo, estatus, tipo) sin modificar numero de cuenta
+    // Actualización de cuenta bancaria respetando reglas de baja lógica y cliente activo
     CuentaBancariaDto actualizarCuenta(String numeroCuenta, CuentaActualizacionRequestDto requestDto);
 }

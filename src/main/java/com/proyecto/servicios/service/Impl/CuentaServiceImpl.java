@@ -14,7 +14,13 @@ import com.proyecto.servicios.repositorys.cliente.CuentaRepository;
 import com.proyecto.servicios.service.CuentaService;
 import com.proyecto.servicios.util.GeneradorCuentaBancariaUtil;
 import lombok.extern.slf4j.Slf4j;
+import com.proyecto.servicios.model.common.PaginaResponseRecord;
+import com.proyecto.servicios.model.cuenta.CuentaConsultaFiltroRecord;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -103,56 +109,36 @@ public class CuentaServiceImpl implements CuentaService {
         return mapearCuentaADto(cuenta);
     }
 
-    // Consulta cuentas bancarias asociadas a un cliente
+    // Búsqueda dinámica y paginada de cuentas bancarias mediante Record inmutable
     @Override
     @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
-    public List<CuentaBancariaDto> obtenerCuentasPorClienteId(Long clienteId) {
-        if (!clienteRepository.existsById(clienteId)) {
-            throw new ClienteNoEncontradoException("Cliente no encontrado con ID " + clienteId);
-        }
-        return buscarCuentasDinamicas(null, clienteId, null, null);
-    }
+    public PaginaResponseRecord<CuentaBancariaDto> buscarCuentasPaginadas(CuentaConsultaFiltroRecord filtro) {
+        Sort sort = Sort.by(Sort.Direction.fromString(filtro.sortDir()), filtro.sortBy());
+        Pageable pageable = PageRequest.of(filtro.page(), filtro.size(), sort);
 
-    // Consulta cuentas bancarias por estatus
-    @Override
-    @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
-    public List<CuentaBancariaDto> obtenerCuentasPorEstatus(String estatus) {
-        return buscarCuentasDinamicas(null, null, estatus, null);
-    }
-
-    // Consulta cuentas bancarias activas
-    @Override
-    @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
-    public List<CuentaBancariaDto> obtenerCuentasActivas() {
-        return buscarCuentasDinamicas(null, null, null, true);
-    }
-
-    // Búsqueda dinámica unificada de cuentas bancarias por filtros opcionales
-    @Override
-    @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
-    public List<CuentaBancariaDto> buscarCuentasDinamicas(String numeroCuenta, Long clienteId, String estatus, Boolean soloActivas) {
         Specification<CuentaEntity> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
 
-            if (numeroCuenta != null && !numeroCuenta.isBlank()) {
-                predicates.add(cb.equal(root.get("numeroCuenta"), numeroCuenta.trim()));
+            if (filtro.numeroCuenta() != null) {
+                predicates.add(cb.equal(root.get("numeroCuenta"), filtro.numeroCuenta()));
             }
-            if (clienteId != null) {
-                predicates.add(cb.equal(root.get("cliente").get("id"), clienteId));
+            if (filtro.clienteId() != null) {
+                predicates.add(cb.equal(root.get("cliente").get("id"), filtro.clienteId()));
             }
-            if (estatus != null && !estatus.isBlank()) {
-                predicates.add(cb.equal(cb.upper(root.get("estatus")), estatus.trim().toUpperCase()));
+            if (filtro.estatus() != null) {
+                predicates.add(cb.equal(cb.upper(root.get("estatus")), filtro.estatus()));
             }
-            if (Boolean.TRUE.equals(soloActivas)) {
+            if (Boolean.TRUE.equals(filtro.soloActivas())) {
                 predicates.add(cb.equal(cb.upper(root.get("estatus")), "ACTIVA"));
             }
 
             return cb.and(predicates.toArray(new Predicate[0]));
         };
 
-        return cuentaRepository.findAll(spec).stream()
-                .map(this::mapearCuentaADto)
-                .collect(Collectors.toList());
+        Page<CuentaBancariaDto> dtoPage = cuentaRepository.findAll(spec, pageable)
+                .map(this::mapearCuentaADto);
+
+        return PaginaResponseRecord.de(dtoPage);
     }
 
     // Consulta de saldo disponible de una cuenta
