@@ -15,7 +15,7 @@ import java.time.format.DateTimeFormatter;
 
 
 
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = {"com.proyecto.servicios", "com.proyecto.servicio.empresa"})
 @EnableScheduling
 @EnableFeignClients
 @Slf4j

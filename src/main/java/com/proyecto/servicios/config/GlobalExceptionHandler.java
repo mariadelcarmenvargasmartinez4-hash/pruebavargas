@@ -48,24 +48,34 @@ import java.util.Objects;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    // 1. Manejo de errores de validación de campos (@Valid en petición)
+    // 1. Manejo de errores de validación de campos (@Valid en petición) - ValidadorCampos / dtoValidation
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<GenericResponse<Object>> handleValidationExceptions(MethodArgumentNotValidException ex) {
-        Map<String, String> errores = new LinkedHashMap<>();
-        for (FieldError error : ex.getBindingResult().getFieldErrors()) {
-            errores.put(error.getField(), error.getDefaultMessage());
-        }
+        return dtoValidation(ex.getBindingResult());
+    }
 
-        // Obtener el mensaje específico detonado por la regla de validación
-        String mensajeDetonado = ex.getBindingResult().getFieldErrors().stream()
+    public ResponseEntity<GenericResponse<Object>> dtoValidation(MethodArgumentNotValidException ex) {
+        return dtoValidation(ex.getBindingResult());
+    }
+
+    public ResponseEntity<GenericResponse<Object>> dtoValidation(org.springframework.validation.Errors errors) {
+        Map<String, String> listError = errors.getFieldErrors().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        FieldError::getField,
+                        error -> java.util.Optional.ofNullable(error.getDefaultMessage()).orElse("Campo inválido"),
+                        (existente, reemplazo) -> existente,
+                        LinkedHashMap::new
+                ));
+
+        String mensajeDetonado = errors.getFieldErrors().stream()
                 .map(FieldError::getDefaultMessage)
                 .filter(Objects::nonNull)
                 .findFirst()
-                .orElse("Error de validación de campos");
+                .orElse("Datos no válidos");
 
-        log.warn("Validación detonada (400 BAD REQUEST): {} -> Detalle: {}", mensajeDetonado, errores);
+        log.warn("Validación detonada (400 BAD REQUEST): {} -> Detalle: {}", mensajeDetonado, listError);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(GenericResponse.error(HttpStatus.BAD_REQUEST.value(), mensajeDetonado, errores));
+                .body(GenericResponse.error(HttpStatus.BAD_REQUEST.value(), mensajeDetonado, listError));
     }
 
     // 2. Manejo de errores de malformación JSON o tipos incompatibles
@@ -126,11 +136,13 @@ public class GlobalExceptionHandler {
     // 4. Manejo de violaciones de restricciones en parámetros (@Validated)
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<GenericResponse<Object>> handleConstraintViolation(ConstraintViolationException ex) {
-        Map<String, String> errores = new LinkedHashMap<>();
-        ex.getConstraintViolations().forEach(cv -> {
-            String propiedad = cv.getPropertyPath().toString();
-            errores.put(propiedad, cv.getMessage());
-        });
+        Map<String, String> errores = ex.getConstraintViolations().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        cv -> cv.getPropertyPath().toString(),
+                        ConstraintViolation::getMessage,
+                        (existente, reemplazo) -> existente,
+                        LinkedHashMap::new
+                ));
 
         String mensajeDetonado = ex.getConstraintViolations().stream()
                 .map(ConstraintViolation::getMessage)
