@@ -35,7 +35,7 @@ public class UsuarioAccesoEntity {
     private Long id;
 
     @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "cliente_id", nullable = false, unique = true)
+    @JoinColumn(name = "cliente_id", nullable = true, unique = true)
     private ClienteEntity cliente;
 
     @Column(name = "username", nullable = false, unique = true, length = 100)

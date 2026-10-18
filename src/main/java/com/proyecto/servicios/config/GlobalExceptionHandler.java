@@ -18,6 +18,7 @@ import com.proyecto.servicios.exception.ReglaNegocioException;
 import com.proyecto.servicios.exception.RfcDuplicadoException;
 import com.proyecto.servicios.exception.UsuarioInactivoException;
 import com.proyecto.servicios.exception.UsuarioNoEncontradoException;
+import com.proyecto.servicios.exception.UsuarioYaExisteException;
 import com.proyecto.servicios.model.common.GenericResponse;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
@@ -242,6 +243,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(CorreoDuplicadoException.class)
     public ResponseEntity<GenericResponse<Object>> handleCorreoDuplicado(CorreoDuplicadoException ex) {
         log.warn("Correo duplicado (409 CONFLICT): {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(GenericResponse.error(HttpStatus.CONFLICT.value(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(UsuarioYaExisteException.class)
+    public ResponseEntity<GenericResponse<Object>> handleUsuarioYaExiste(UsuarioYaExisteException ex) {
+        log.warn("Usuario ya existe (409 CONFLICT): {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(GenericResponse.error(HttpStatus.CONFLICT.value(), ex.getMessage()));
     }
