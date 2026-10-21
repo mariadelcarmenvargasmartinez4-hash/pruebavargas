@@ -30,6 +30,7 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Order(Ordered.HIGHEST_PRECEDENCE)
+@org.springframework.stereotype.Component("validadorCamposServicios")
 @ControllerAdvice
 public class ValidadorCampos {
 

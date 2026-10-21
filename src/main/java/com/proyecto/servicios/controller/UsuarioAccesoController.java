@@ -18,6 +18,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -43,6 +44,15 @@ public class UsuarioAccesoController {
 
     public UsuarioAccesoController(UsuarioAccesoService usuarioService) {
         this.usuarioService = usuarioService;
+    }
+
+    @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "Información general y catálogo interactivo de usuarios",
+               description = "Informa sobre los endpoints disponibles y redirige al Swagger UI interactivo.")
+    public ResponseEntity<GenericResponse<String>> obtenerInfoUsuarios() {
+        return ResponseEntity.ok(GenericResponse.exito(
+                "Para consultar usuarios de forma dinámica y paginada utilice POST /usuarios/consulta con un JSON en el cuerpo. Para interactuar con todos los endpoints visualmente, visite: http://localhost:8088/swagger-ui/index.html",
+                "Módulo de Administración de Usuarios activo"));
     }
 
     @PostMapping(value = {"", "/crear"}, consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
