@@ -61,6 +61,9 @@ public class CuentaEntity {
     @Builder.Default
     private String estatus = "ACTIVA";
 
+    @Column(name = "pin_hash", length = 120)
+    private String pinHash;
+
     @Column(name = "fecha_apertura", nullable = false, updatable = false)
     private LocalDateTime fechaApertura;
 
@@ -76,7 +79,6 @@ public class CuentaEntity {
         this.moneda = Optional.ofNullable(this.moneda).orElse("MXN");
         this.estatus = Optional.ofNullable(this.estatus).orElse("ACTIVA");
     }
-
 
     @PreUpdate
     public void preUpdate() {
