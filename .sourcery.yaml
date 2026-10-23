@@ -1,0 +1,5 @@
+rules:
+  - id: solo-carpeta-servicios
+    path:
+      include:
+        - "src/test/java/com/proyecto/servicios/service/**"
