@@ -64,8 +64,8 @@ public record PagoServicioRequestRecord(
         BigDecimal montoFinal = Optional.ofNullable(dto.getMonto()).orElse(dto.getPrecio());
         String pinFinal = Optional.ofNullable(dto.getPin()).orElse(dto.getPassSeguro());
         Boolean banderaFinal = Optional.ofNullable(dto.getBandera()).orElse(dto.getEsRecargaTelefonica());
-        Long conceptoFinal = Optional.ofNullable(dto.getIdConcepto())
-                .orElseGet(() -> Optional.ofNullable(dto.getIdDistribuidor()).map(Integer::longValue).orElse(null));
+        Long conceptoFinal = dto.getIdConcepto();
+
 
         return new PagoServicioRequestRecord(
                 dto.getNumCuenta(),

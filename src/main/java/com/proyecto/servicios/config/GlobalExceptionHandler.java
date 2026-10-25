@@ -14,6 +14,7 @@ import com.proyecto.servicios.exception.CredencialesInvalidasException;
 import com.proyecto.servicios.exception.CuentaNoEncontradaException;
 import com.proyecto.servicios.exception.CurpDuplicadaException;
 import com.proyecto.servicios.exception.PasswordInvalidaException;
+import com.proyecto.servicios.exception.ProveedorPagoException;
 import com.proyecto.servicios.exception.ReglaNegocioException;
 import com.proyecto.servicios.exception.RfcDuplicadoException;
 import com.proyecto.servicios.exception.UsuarioInactivoException;
@@ -278,6 +279,13 @@ public class GlobalExceptionHandler {
         String mensaje = ex.getReason() != null ? ex.getReason() : ex.getMessage();
         log.warn("ResponseStatusException capturada ({}): {}", status, mensaje);
         return ResponseEntity.status(status).body(GenericResponse.error(status.value(), mensaje));
+    }
+
+    @ExceptionHandler(ProveedorPagoException.class)
+    public ResponseEntity<GenericResponse<Object>> handleProveedorPagoException(ProveedorPagoException ex) {
+        log.error("Error en comunicación con proveedor externo de pagos (502 BAD GATEWAY): {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(GenericResponse.error(HttpStatus.BAD_GATEWAY.value(), ex.getMessage()));
     }
 
     // 11. Excepciones no controladas: Oculta detalles internos y evita fugas de información

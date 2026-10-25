@@ -40,6 +40,10 @@ public class AesEncryptionUtil {
      * @return Cadena cifrada en Base64 que contiene [IV (12 bytes) + CipherText + Tag]
      */
     public String encriptar(String textoPlano, String claveSecreta) {
+        validarClave(claveSecreta);
+        if (textoPlano == null) {
+            throw new IllegalArgumentException("El texto plano a cifrar no puede ser nulo");
+        }
         try {
             byte[] iv = new byte[IV_LENGTH_BYTE];
             secureRandom.nextBytes(iv);
@@ -70,8 +74,15 @@ public class AesEncryptionUtil {
      * @return Texto plano descifrado
      */
     public String desencriptar(String textoCifradoBase64, String claveSecreta) {
+        validarClave(claveSecreta);
+        if (textoCifradoBase64 == null || textoCifradoBase64.isBlank()) {
+            throw new IllegalArgumentException("El texto cifrado en Base64 no puede ser nulo ni vacío");
+        }
         try {
             byte[] combined = Base64.getDecoder().decode(textoCifradoBase64);
+            if (combined.length <= IV_LENGTH_BYTE) {
+                throw new IllegalArgumentException("El payload cifrado es demasiado corto para contener IV y datos");
+            }
             byte[] iv = new byte[IV_LENGTH_BYTE];
             System.arraycopy(combined, 0, iv, 0, iv.length);
 
@@ -100,6 +111,10 @@ public class AesEncryptionUtil {
      * @return Firma en formato hexadecimal en mayúsculas
      */
     public String firmarPayload(String payload, String claveSecreta) {
+        validarClave(claveSecreta);
+        if (payload == null) {
+            throw new IllegalArgumentException("El payload a firmar no puede ser nulo");
+        }
         try {
             Mac mac = Mac.getInstance(HMAC_ALGORITHM);
             SecretKeySpec secretKeySpec = new SecretKeySpec(claveSecreta.getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM);
@@ -117,7 +132,14 @@ public class AesEncryptionUtil {
         }
     }
 
+    private void validarClave(String clave) {
+        if (clave == null || clave.isBlank()) {
+            throw new IllegalArgumentException("La clave criptográfica no puede ser nula ni vacía");
+        }
+    }
+
     private SecretKey derivarClaveAes(String clave) throws NoSuchAlgorithmException {
+        validarClave(clave);
         MessageDigest sha = MessageDigest.getInstance("SHA-256");
         byte[] keyBytes = sha.digest(clave.getBytes(StandardCharsets.UTF_8));
         return new SecretKeySpec(keyBytes, ALGORITHM);
