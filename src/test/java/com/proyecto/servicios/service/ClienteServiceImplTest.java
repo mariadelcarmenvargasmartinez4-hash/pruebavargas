@@ -16,10 +16,13 @@ import com.proyecto.servicios.repositorys.cliente.CuentaRepository;
 import com.proyecto.servicios.repositorys.cliente.DomicilioRepository;
 import com.proyecto.servicios.repositorys.cliente.UsuarioAccesoRepository;
 import com.proyecto.servicios.service.Impl.ClienteServiceImpl;
+import com.proyecto.servicios.util.ClienteTestDataBuilder;
+import com.proyecto.servicios.util.CuentaTestDataBuilder;
 import com.proyecto.servicios.util.GeneradorCuentaBancariaUtil;
 import com.proyecto.servicios.util.MetricasTextoUtil;
 import com.proyecto.servicios.util.TestCredentials;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -27,9 +30,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
-import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -42,9 +43,12 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-// Pruebas unitarias para ClienteServiceImpl cubriendo reglas de negocio, validaciones, baja lógica y consultas
+/**
+ * Pruebas unitarias para ClienteServiceImpl.
+ * Utiliza Test Data Builders para eliminar código quemado y mantener aislamiento total con Mocks.
+ */
 @ExtendWith(MockitoExtension.class)
-public class ClienteServiceImplTest {
+class ClienteServiceImplTest {
 
     @Mock
     private ClienteRepository clienteRepository;
@@ -87,94 +91,16 @@ public class ClienteServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        requestValido = ClienteRegistroRequestDto.builder()
-                .nombre("Juan")
-                .segundoNombre("Carlos")
-                .apellidoPaterno("Perez")
-                .apellidoMaterno("Lopez")
-                .fechaNacimiento(LocalDate.of(1990, 5, 15))
-                .curp("PELJ900515HDFRPR09")
-                .rfc("PELJ9005151A2")
-                .sexo("MASCULINO")
-                .nacionalidad("MEXICANA")
-                .estadoCivil("SOLTERO")
-                .correoElectronico("juan.perez@example.com")
-                .telefonoMovil("5512345678")
-                .telefonoAlternativo("5587654321")
-                .calle("Av. Reforma")
-                .numeroExterior("123")
-                .numeroInterior("Piso 4")
-                .colonia("Juarez")
-                .municipio("Cuauhtemoc")
-                .estado("Ciudad de Mexico")
-                .codigoPostal("06600")
-                .pais("Mexico")
-                .ocupacion("Ingeniero de Software")
-                .empresa("Tech Solutions SA")
-                .ingresoMensual(new BigDecimal("35000.00"))
-                .saldoInicial(new BigDecimal("1500.00"))
-                .tipoCuenta("DEBITO")
-                .build();
-
-        clienteMock = ClienteEntity.builder()
-                .id(1L)
-                .nombre("Juan")
-                .segundoNombre("Carlos")
-                .apellidoPaterno("Perez")
-                .apellidoMaterno("Lopez")
-                .curp("PELJ900515HDFRPR09")
-                .rfc("PELJ9005151A2")
-                .sexo("MASCULINO")
-                .nacionalidad("MEXICANA")
-                .estadoCivil("SOLTERO")
-                .correoElectronico("juan.perez@example.com")
-                .telefonoMovil("5512345678")
-                .ocupacion("Ingeniero de Software")
-                .empresa("Tech Solutions SA")
-                .fechaNacimiento(LocalDate.of(1990, 5, 15))
-                .ingresoMensual(new BigDecimal("35000.00"))
-                .activo(true)
-                .fechaCreacion(LocalDateTime.now())
-                .fechaActualizacion(LocalDateTime.now())
-                .build();
-
-        domicilioMock = DomicilioEntity.builder()
-                .id(1L)
-                .cliente(clienteMock)
-                .calle("Av. Reforma")
-                .numeroExterior("123")
-                .colonia("Juarez")
-                .municipio("Cuauhtemoc")
-                .estado("Ciudad de Mexico")
-                .codigoPostal("06600")
-                .pais("Mexico")
-                .build();
-
-        cuentaMock = CuentaEntity.builder()
-                .id(10L)
-                .cliente(clienteMock)
-                .numeroCuenta("4815162342")
-                .clabe("012180004815162342")
-                .tipoCuenta("DEBITO")
-                .saldo(new BigDecimal("1500.00"))
-                .moneda("MXN")
-                .estatus("ACTIVA")
-                .build();
-
-        usuarioMock = UsuarioAccesoEntity.builder()
-                .id(1L)
-                .cliente(clienteMock)
-                .username("juan.perez@example.com")
-                .passwordHash(TestCredentials.testPassHash())
-                .activo(true)
-                .fechaCreacion(LocalDateTime.now())
-                .build();
+        requestValido = ClienteTestDataBuilder.requestValido();
+        clienteMock = ClienteTestDataBuilder.clienteValido();
+        domicilioMock = ClienteTestDataBuilder.domicilioValido(clienteMock);
+        cuentaMock = CuentaTestDataBuilder.cuentaValida(clienteMock);
+        usuarioMock = ClienteTestDataBuilder.usuarioValido(clienteMock);
     }
 
-    // Valida registro exitoso en clientes, domicilios, cuentas y usuario de acceso
     @Test
+    @DisplayName("Registrar cliente exitoso: persiste cliente, domicilio, cuenta y usuario")
     void testRegistrarCliente_Exitoso() {
-        requestValido.setPassword(TestCredentials.validPass());
         when(sexoService.esValidoYActivo(anyString())).thenReturn(true);
         when(nacionalidadService.esValidoYActivo(anyString())).thenReturn(true);
         when(estadoCivilService.esValidoYActivo(anyString())).thenReturn(true);
@@ -197,7 +123,7 @@ public class ClienteServiceImplTest {
         assertNotNull(respuesta);
         assertEquals(0, respuesta.getCodigo());
         assertEquals("Juan Carlos Perez Lopez", respuesta.getNombreCompleto());
-        assertEquals("PELJ900515HDFRPR09", respuesta.getCurp());
+        assertEquals(clienteMock.getCurp(), respuesta.getCurp());
         assertNotNull(respuesta.getDomicilio());
         assertEquals("Av. Reforma", respuesta.getDomicilio().getCalle());
         assertNotNull(respuesta.getCuentaBancaria());
@@ -213,8 +139,8 @@ public class ClienteServiceImplTest {
         verify(usuarioAccesoRepository).save(any(UsuarioAccesoEntity.class));
     }
 
-    // Valida que no se permita registrar clientes menores de 18 anos
     @Test
+    @DisplayName("Registrar cliente menor de edad lanza ReglaNegocioException")
     void testRegistrarCliente_MenorDeEdad_LanzaExcepcion() {
         requestValido.setFechaNacimiento(LocalDate.now().minusYears(17));
 
@@ -226,8 +152,8 @@ public class ClienteServiceImplTest {
         assertEquals("El cliente debe ser mayor de edad (18 años o más)", excepcion.getMessage());
     }
 
-    // Valida que no se permita registrar clientes mayores a 100 anos
     @Test
+    @DisplayName("Registrar cliente mayor de 100 años lanza ReglaNegocioException")
     void testRegistrarCliente_MayorDe100Anos_LanzaExcepcion() {
         requestValido.setFechaNacimiento(LocalDate.now().minusYears(101));
 
@@ -239,8 +165,8 @@ public class ClienteServiceImplTest {
         assertEquals("La fecha de nacimiento no debe exceder los 100 años", excepcion.getMessage());
     }
 
-    // Valida error de negocio si el sexo no existe en catálogo
     @Test
+    @DisplayName("Registrar cliente con sexo no presente en catálogo lanza ReglaNegocioException")
     void testRegistrarCliente_SexoInvalido_LanzaExcepcion() {
         when(sexoService.esValidoYActivo(anyString())).thenReturn(false);
 
@@ -252,8 +178,8 @@ public class ClienteServiceImplTest {
         assertNotNull(excepcion.getMessage());
     }
 
-    // Valida unicidad de CURP
     @Test
+    @DisplayName("Registrar cliente con CURP duplicado lanza CurpDuplicadaException")
     void testRegistrarCliente_CurpDuplicada_LanzaExcepcion() {
         when(sexoService.esValidoYActivo(anyString())).thenReturn(true);
         when(nacionalidadService.esValidoYActivo(anyString())).thenReturn(true);
@@ -263,8 +189,8 @@ public class ClienteServiceImplTest {
         assertThrows(CurpDuplicadaException.class, () -> clienteService.registrarCliente(requestValido));
     }
 
-    // Valida unicidad de RFC
     @Test
+    @DisplayName("Registrar cliente con RFC duplicado lanza RfcDuplicadoException")
     void testRegistrarCliente_RfcDuplicado_LanzaExcepcion() {
         when(sexoService.esValidoYActivo(anyString())).thenReturn(true);
         when(nacionalidadService.esValidoYActivo(anyString())).thenReturn(true);
@@ -275,22 +201,22 @@ public class ClienteServiceImplTest {
         assertThrows(RfcDuplicadoException.class, () -> clienteService.registrarCliente(requestValido));
     }
 
-    // Valida consulta por CURP exitosa
     @Test
+    @DisplayName("Consultar cliente por CURP exitoso")
     void testObtenerClientePorCurp_Exitoso() {
-        when(clienteRepository.findByCurp("PELJ900515HDFRPR09")).thenReturn(Optional.of(clienteMock));
+        when(clienteRepository.findByCurp(clienteMock.getCurp())).thenReturn(Optional.of(clienteMock));
         when(domicilioRepository.findByClienteId(1L)).thenReturn(Optional.of(domicilioMock));
         when(cuentaRepository.findByClienteId(1L)).thenReturn(List.of(cuentaMock));
 
-        ClienteRegistroResponseDto respuesta = clienteService.obtenerClientePorCurp("PELJ900515HDFRPR09");
+        ClienteRegistroResponseDto respuesta = clienteService.obtenerClientePorCurp(clienteMock.getCurp());
 
         assertNotNull(respuesta);
-        assertEquals("PELJ900515HDFRPR09", respuesta.getCurp());
+        assertEquals(clienteMock.getCurp(), respuesta.getCurp());
         assertEquals("Juan Carlos Perez Lopez", respuesta.getNombreCompleto());
     }
 
-    // Valida baja logica (cliente inactivo y cuenta inactiva)
     @Test
+    @DisplayName("Desactivar cliente aplica baja lógica en cliente, cuenta y usuario")
     void testDesactivarCliente_BajaLogica() {
         when(clienteRepository.findById(1L)).thenReturn(Optional.of(clienteMock));
         when(cuentaRepository.findByClienteId(1L)).thenReturn(List.of(cuentaMock));
@@ -307,8 +233,8 @@ public class ClienteServiceImplTest {
         verify(usuarioAccesoRepository).save(usuarioMock);
     }
 
-    // Valida reactivacion de cliente
     @Test
+    @DisplayName("Reactivar cliente exitoso reactiva entidad y usuario")
     void testReactivarCliente_Exitoso() {
         clienteMock.setActivo(false);
         usuarioMock.setActivo(false);
@@ -326,8 +252,8 @@ public class ClienteServiceImplTest {
         verify(usuarioAccesoRepository).save(usuarioMock);
     }
 
-    // Valida excepcion cuando el cliente no existe
     @Test
+    @DisplayName("Obtener cliente por ID no existente lanza ClienteNoEncontradoException")
     void testObtenerClientePorId_NoEncontrado() {
         when(clienteRepository.findById(999L)).thenReturn(Optional.empty());
 

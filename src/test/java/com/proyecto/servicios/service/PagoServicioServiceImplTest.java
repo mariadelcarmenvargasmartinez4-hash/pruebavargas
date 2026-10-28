@@ -6,7 +6,6 @@ import com.proyecto.servicios.entity.cliente.CuentaEntity;
 import com.proyecto.servicios.entity.gestopago.GestoPagoToken;
 import com.proyecto.servicios.entity.mongo.ProductoDocument;
 import com.proyecto.servicios.entity.pago.PagoServicioEntity;
-import com.proyecto.servicios.exception.CuentaNoEncontradaException;
 import com.proyecto.servicios.exception.EntidadNoProcesableException;
 import com.proyecto.servicios.exception.ProveedorPagoException;
 import com.proyecto.servicios.exception.ReglaNegocioException;
@@ -20,6 +19,8 @@ import com.proyecto.servicios.repositorys.mongo.ProductoMongoRepository;
 import com.proyecto.servicios.repositorys.pago.PagoServicioRepository;
 import com.proyecto.servicios.service.Impl.PagoServicioServiceImpl;
 import com.proyecto.servicios.util.AesEncryptionUtil;
+import com.proyecto.servicios.util.PagoTestDataBuilder;
+import com.proyecto.servicios.util.TestCredentials;
 import feign.FeignException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -29,7 +30,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import com.proyecto.servicios.util.TestCredentials;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
@@ -48,6 +48,10 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * Pruebas unitarias para PagoServicioServiceImpl.
+ * Utiliza Test Data Builders para eliminar código quemado y aislar la lógica con Mocks.
+ */
 @ExtendWith(MockitoExtension.class)
 class PagoServicioServiceImplTest {
 
@@ -92,40 +96,12 @@ class PagoServicioServiceImplTest {
     @Test
     @DisplayName("Paso 4: Si proveedor retorna código 01, se descuenta el saldo en la base de datos")
     void procesarPagoExitosoCodigo01DescuentaSaldo() {
-        CuentaEntity cuenta = CuentaEntity.builder()
-                .id(1L)
-                .numeroCuenta("1234567890123456")
-                .saldo(new BigDecimal("500.00"))
-                .estatus("ACTIVA")
-                .pinHash(PIN_HASH)
-                .build();
+        CuentaEntity cuenta = PagoTestDataBuilder.cuentaParaPago(new BigDecimal("500.00"));
+        PagoServicioRequestDto request = PagoTestDataBuilder.requestValido();
+        GestoPagoSendTxResponse responseProveedor = PagoTestDataBuilder.respuestaExitosaProveedor();
+        GestoPagoToken tokenActivo = PagoTestDataBuilder.tokenActivo();
 
-        PagoServicioRequestDto request = PagoServicioRequestDto.builder()
-                .numCuenta("1234567890123456")
-                .idServicio(1L)
-                .idProducto(101L)
-                .monto(new BigDecimal("150.00"))
-                .upe("1234567890")
-                .bandera(true)
-                .telefono("5598765432")
-                .pin(TestCredentials.testPin())
-                .build();
-
-        GestoPagoSendTxResponse responseProveedor = GestoPagoSendTxResponse.builder()
-                .codigo("01")
-                .mensaje("Transacción Exitosa")
-                .folioTransaccion("GP-TX-999")
-                .autorizacion("AUTH-12345")
-                .build();
-
-        GestoPagoToken tokenActivo = GestoPagoToken.builder()
-                .token("VALID_TOKEN")
-                .activo(true)
-                .expiresIn(3600L)
-                .fechaActualizacion(LocalDateTime.now())
-                .build();
-
-        when(cuentaRepository.findByNumeroCuentaWithLock("1234567890123456")).thenReturn(Optional.of(cuenta));
+        when(cuentaRepository.findByNumeroCuentaWithLock(request.getNumCuenta())).thenReturn(Optional.of(cuenta));
         when(passwordEncoder.matches(TestCredentials.testPin(), PIN_HASH)).thenReturn(true);
         when(gestoPagoTokenService.obtenerTokenActivo(any(), any())).thenReturn(Optional.of(tokenActivo));
         when(aesEncryptionUtil.encriptar(anyString(), any())).thenReturn("ENCRYPTED_AES");
@@ -136,7 +112,7 @@ class PagoServicioServiceImplTest {
         PagoServicioResponseDto response = pagoServicioService.procesarPago(request);
 
         assertNotNull(response);
-        assertEquals("1234567890123456", response.getNumCuenta());
+        assertEquals(request.getNumCuenta(), response.getNumCuenta());
         assertEquals(new BigDecimal("150.00"), response.getMonto());
         assertEquals(new BigDecimal("500.00"), response.getSaldoAnterior());
         assertEquals(new BigDecimal("350.00"), response.getSaldoActual());
@@ -151,38 +127,15 @@ class PagoServicioServiceImplTest {
     @Test
     @DisplayName("Paso 4: Si proveedor retorna código distinto de 01, NO se descuenta saldo")
     void procesarPagoCodigoDistintoDe01NoDescuentaSaldo() {
-        CuentaEntity cuenta = CuentaEntity.builder()
-                .id(1L)
-                .numeroCuenta("1234567890123456")
-                .saldo(new BigDecimal("500.00"))
-                .estatus("ACTIVA")
-                .pinHash(PIN_HASH)
-                .build();
-
-        PagoServicioRequestDto request = PagoServicioRequestDto.builder()
-                .numCuenta("1234567890123456")
-                .idServicio(1L)
-                .idProducto(101L)
-                .monto(new BigDecimal("150.00"))
-                .upe("1234567890")
+        CuentaEntity cuenta = PagoTestDataBuilder.cuentaParaPago(new BigDecimal("500.00"));
+        PagoServicioRequestDto request = PagoTestDataBuilder.unPagoRequest()
                 .bandera(false)
                 .referencia("REF-12345")
-                .pin(TestCredentials.testPin())
                 .build();
+        GestoPagoSendTxResponse responseProveedor = PagoTestDataBuilder.respuestaRechazoProveedor("02", "Rechazada por saldo insuficiente del distribuidor");
+        GestoPagoToken tokenActivo = PagoTestDataBuilder.tokenActivo();
 
-        GestoPagoSendTxResponse responseProveedor = GestoPagoSendTxResponse.builder()
-                .codigo("02")
-                .mensaje("Rechazada por saldo insuficiente del distribuidor")
-                .build();
-
-        GestoPagoToken tokenActivo = GestoPagoToken.builder()
-                .token("VALID_TOKEN")
-                .activo(true)
-                .expiresIn(3600L)
-                .fechaActualizacion(LocalDateTime.now())
-                .build();
-
-        when(cuentaRepository.findByNumeroCuentaWithLock("1234567890123456")).thenReturn(Optional.of(cuenta));
+        when(cuentaRepository.findByNumeroCuentaWithLock(request.getNumCuenta())).thenReturn(Optional.of(cuenta));
         when(passwordEncoder.matches(TestCredentials.testPin(), PIN_HASH)).thenReturn(true);
         when(gestoPagoTokenService.obtenerTokenActivo(any(), any())).thenReturn(Optional.of(tokenActivo));
         when(aesEncryptionUtil.encriptar(anyString(), any())).thenReturn("ENCRYPTED_AES");
@@ -199,33 +152,14 @@ class PagoServicioServiceImplTest {
     @Test
     @DisplayName("Paso 4: Si ocurre timeout, se marca EN_CONCILIACION, sendTx fue invocado y no se descuenta saldo")
     void procesarPagoTimeoutMarcaEnConciliacionYNoDescuentaSaldo() {
-        CuentaEntity cuenta = CuentaEntity.builder()
-                .id(1L)
-                .numeroCuenta("1234567890123456")
-                .saldo(new BigDecimal("500.00"))
-                .estatus("ACTIVA")
-                .pinHash(PIN_HASH)
-                .build();
-
-        PagoServicioRequestDto request = PagoServicioRequestDto.builder()
-                .numCuenta("1234567890123456")
-                .idServicio(1L)
-                .idProducto(101L)
+        CuentaEntity cuenta = PagoTestDataBuilder.cuentaParaPago(new BigDecimal("500.00"));
+        PagoServicioRequestDto request = PagoTestDataBuilder.unPagoRequest()
                 .monto(new BigDecimal("100.00"))
-                .upe("1234567890")
-                .bandera(true)
                 .telefono("5512345678")
-                .pin(TestCredentials.testPin())
                 .build();
+        GestoPagoToken tokenActivo = PagoTestDataBuilder.tokenActivo();
 
-        GestoPagoToken tokenActivo = GestoPagoToken.builder()
-                .token("VALID_TOKEN")
-                .activo(true)
-                .expiresIn(3600L)
-                .fechaActualizacion(LocalDateTime.now())
-                .build();
-
-        when(cuentaRepository.findByNumeroCuentaWithLock("1234567890123456")).thenReturn(Optional.of(cuenta));
+        when(cuentaRepository.findByNumeroCuentaWithLock(request.getNumCuenta())).thenReturn(Optional.of(cuenta));
         when(passwordEncoder.matches(TestCredentials.testPin(), PIN_HASH)).thenReturn(true);
         when(gestoPagoTokenService.obtenerTokenActivo(any(), any())).thenReturn(Optional.of(tokenActivo));
         when(aesEncryptionUtil.encriptar(anyString(), any())).thenReturn("ENCRYPTED_AES");
@@ -254,18 +188,11 @@ class PagoServicioServiceImplTest {
                 .precio("150.00")
                 .build();
 
-        PagoServicioRequestDto request = PagoServicioRequestDto.builder()
-                .numCuenta("1234567890123456")
-                .idServicio(1L)
-                .idProducto(101L)
-                .monto(new BigDecimal("150.00"))
-                .upe("1234567890")
-                .bandera(true)
+        PagoServicioRequestDto request = PagoTestDataBuilder.unPagoRequest()
                 .telefono("5512345678")
-                .pin(TestCredentials.testPin())
                 .build();
 
-        when(pagoServicioRepository.findByUpe("1234567890")).thenReturn(Optional.empty());
+        when(pagoServicioRepository.findByUpe(request.getUpe())).thenReturn(Optional.empty());
         when(productoMongoRepository.findByIdProducto(101)).thenReturn(Optional.of(prod));
 
         ReglaNegocioException ex = assertThrows(ReglaNegocioException.class, () -> pagoServicioService.procesarPago(request));
@@ -284,18 +211,12 @@ class PagoServicioServiceImplTest {
                 .precio("200.00") // Precio fijo en catálogo $200.00
                 .build();
 
-        PagoServicioRequestDto request = PagoServicioRequestDto.builder()
-                .numCuenta("1234567890123456")
-                .idServicio(1L)
-                .idProducto(101L)
+        PagoServicioRequestDto request = PagoTestDataBuilder.unPagoRequest()
                 .monto(new BigDecimal("150.00")) // Cliente envía $150.00 (manipulado)
-                .upe("1234567890")
-                .bandera(true)
                 .telefono("5512345678")
-                .pin(TestCredentials.testPin())
                 .build();
 
-        when(pagoServicioRepository.findByUpe("1234567890")).thenReturn(Optional.empty());
+        when(pagoServicioRepository.findByUpe(request.getUpe())).thenReturn(Optional.empty());
         when(productoMongoRepository.findByIdProducto(101)).thenReturn(Optional.of(prod));
 
         ReglaNegocioException ex = assertThrows(ReglaNegocioException.class, () -> pagoServicioService.procesarPago(request));
@@ -320,18 +241,12 @@ class PagoServicioServiceImplTest {
                 .fechaOperacion(LocalDateTime.now())
                 .build();
 
-        PagoServicioRequestDto request = PagoServicioRequestDto.builder()
-                .numCuenta("1234567890123456")
-                .idServicio(1L)
-                .idProducto(101L)
+        PagoServicioRequestDto request = PagoTestDataBuilder.unPagoRequest()
                 .monto(new BigDecimal("100.00"))
-                .upe("1234567890")
-                .bandera(true)
                 .telefono("5512345678")
-                .pin(TestCredentials.testPin())
                 .build();
 
-        when(pagoServicioRepository.findByUpe("1234567890")).thenReturn(Optional.of(transaccionConcilia));
+        when(pagoServicioRepository.findByUpe(request.getUpe())).thenReturn(Optional.of(transaccionConcilia));
 
         ReglaNegocioException ex = assertThrows(ReglaNegocioException.class, () -> pagoServicioService.procesarPago(request));
         assertTrue(ex.getMessage().contains("EN_CONCILIACION"));
@@ -368,26 +283,14 @@ class PagoServicioServiceImplTest {
     @Test
     @DisplayName("Comment 1: Cuenta sin PIN configurado rechaza pago y no permite bypass")
     void procesarPagoCuentaSinPinConfiguradoLanzaExcepcion() {
-        CuentaEntity cuentaSinPin = CuentaEntity.builder()
-                .id(1L)
-                .numeroCuenta("1234567890123456")
-                .saldo(new BigDecimal("500.00"))
-                .estatus("ACTIVA")
-                .pinHash(null)
-                .build();
+        CuentaEntity cuentaSinPin = PagoTestDataBuilder.cuentaParaPago(new BigDecimal("500.00"));
+        cuentaSinPin.setPinHash(null);
 
-        PagoServicioRequestDto request = PagoServicioRequestDto.builder()
-                .numCuenta("1234567890123456")
-                .idServicio(1L)
-                .idProducto(101L)
-                .monto(new BigDecimal("150.00"))
-                .upe("1234567890")
-                .bandera(true)
+        PagoServicioRequestDto request = PagoTestDataBuilder.unPagoRequest()
                 .telefono("5512345678")
-                .pin(TestCredentials.testPin())
                 .build();
 
-        when(cuentaRepository.findByNumeroCuentaWithLock("1234567890123456")).thenReturn(Optional.of(cuentaSinPin));
+        when(cuentaRepository.findByNumeroCuentaWithLock(request.getNumCuenta())).thenReturn(Optional.of(cuentaSinPin));
 
         ReglaNegocioException ex = assertThrows(ReglaNegocioException.class, () -> pagoServicioService.procesarPago(request));
         assertTrue(ex.getMessage().contains("no tiene un PIN de autorización configurado"));
@@ -411,18 +314,12 @@ class PagoServicioServiceImplTest {
                 .fechaOperacion(LocalDateTime.now())
                 .build();
 
-        PagoServicioRequestDto request = PagoServicioRequestDto.builder()
-                .numCuenta("1234567890123456")
-                .idServicio(1L)
-                .idProducto(101L)
+        PagoServicioRequestDto request = PagoTestDataBuilder.unPagoRequest()
                 .monto(new BigDecimal("100.00"))
-                .upe("1234567890")
-                .bandera(true)
                 .telefono("5512345678")
-                .pin(TestCredentials.testPin())
                 .build();
 
-        when(pagoServicioRepository.findByUpe("1234567890")).thenReturn(Optional.of(pagoPrevio));
+        when(pagoServicioRepository.findByUpe(request.getUpe())).thenReturn(Optional.of(pagoPrevio));
 
         PagoServicioResponseDto response = pagoServicioService.procesarPago(request);
 
@@ -438,26 +335,13 @@ class PagoServicioServiceImplTest {
     @Test
     @DisplayName("Paso 2: Validación de PIN incorrecto lanza ReglaNegocioException y no llama a GestoPago")
     void procesarPagoPinIncorrectoLanzaExcepcion() {
-        CuentaEntity cuenta = CuentaEntity.builder()
-                .id(1L)
-                .numeroCuenta("1234567890123456")
-                .saldo(new BigDecimal("500.00"))
-                .estatus("ACTIVA")
-                .pinHash(PIN_HASH)
-                .build();
-
-        PagoServicioRequestDto request = PagoServicioRequestDto.builder()
-                .numCuenta("1234567890123456")
-                .idServicio(1L)
-                .idProducto(101L)
-                .monto(new BigDecimal("150.00"))
-                .upe("1234567890")
-                .bandera(true)
+        CuentaEntity cuenta = PagoTestDataBuilder.cuentaParaPago(new BigDecimal("500.00"));
+        PagoServicioRequestDto request = PagoTestDataBuilder.unPagoRequest()
                 .telefono("5512345678")
                 .pin("9999")
                 .build();
 
-        when(cuentaRepository.findByNumeroCuentaWithLock("1234567890123456")).thenReturn(Optional.of(cuenta));
+        when(cuentaRepository.findByNumeroCuentaWithLock(request.getNumCuenta())).thenReturn(Optional.of(cuenta));
         when(passwordEncoder.matches(eq("9999"), eq(PIN_HASH))).thenReturn(false);
 
         assertThrows(ReglaNegocioException.class, () -> pagoServicioService.procesarPago(request));
@@ -469,26 +353,12 @@ class PagoServicioServiceImplTest {
     @Test
     @DisplayName("Paso 2: Validación de Saldo insuficiente lanza ReglaNegocioException")
     void procesarPagoSaldoInsuficienteLanzaExcepcion() {
-        CuentaEntity cuenta = CuentaEntity.builder()
-                .id(1L)
-                .numeroCuenta("1234567890123456")
-                .saldo(new BigDecimal("50.00"))
-                .estatus("ACTIVA")
-                .pinHash(PIN_HASH)
-                .build();
-
-        PagoServicioRequestDto request = PagoServicioRequestDto.builder()
-                .numCuenta("1234567890123456")
-                .idServicio(1L)
-                .idProducto(101L)
-                .monto(new BigDecimal("150.00"))
-                .upe("1234567890")
-                .bandera(true)
+        CuentaEntity cuenta = PagoTestDataBuilder.cuentaParaPago(new BigDecimal("50.00"));
+        PagoServicioRequestDto request = PagoTestDataBuilder.unPagoRequest()
                 .telefono("5512345678")
-                .pin(TestCredentials.testPin())
                 .build();
 
-        when(cuentaRepository.findByNumeroCuentaWithLock("1234567890123456")).thenReturn(Optional.of(cuenta));
+        when(cuentaRepository.findByNumeroCuentaWithLock(request.getNumCuenta())).thenReturn(Optional.of(cuenta));
         when(passwordEncoder.matches(TestCredentials.testPin(), PIN_HASH)).thenReturn(true);
 
         assertThrows(ReglaNegocioException.class, () -> pagoServicioService.procesarPago(request));
@@ -498,42 +368,28 @@ class PagoServicioServiceImplTest {
     @Test
     @DisplayName("Paso 2: Validación de Cuenta inactiva lanza ReglaNegocioException")
     void procesarPagoCuentaInactivaLanzaExcepcion() {
-        CuentaEntity cuenta = CuentaEntity.builder()
-                .id(1L)
-                .numeroCuenta("1234567890123456")
-                .saldo(new BigDecimal("500.00"))
-                .estatus("BLOQUEADA")
-                .build();
+        CuentaEntity cuenta = PagoTestDataBuilder.cuentaParaPago(new BigDecimal("500.00"));
+        cuenta.setEstatus("BLOQUEADA");
 
-        PagoServicioRequestDto request = PagoServicioRequestDto.builder()
-                .numCuenta("1234567890123456")
-                .idServicio(1L)
-                .idProducto(101L)
+        PagoServicioRequestDto request = PagoTestDataBuilder.unPagoRequest()
                 .monto(new BigDecimal("100.00"))
-                .upe("1234567890")
-                .bandera(true)
                 .telefono("5512345678")
-                .pin(TestCredentials.testPin())
                 .build();
 
-        when(cuentaRepository.findByNumeroCuentaWithLock("1234567890123456")).thenReturn(Optional.of(cuenta));
+        when(cuentaRepository.findByNumeroCuentaWithLock(request.getNumCuenta())).thenReturn(Optional.of(cuenta));
 
         assertThrows(ReglaNegocioException.class, () -> pagoServicioService.procesarPago(request));
         verify(gestoPagoSendTxClient, never()).sendTx(anyString(), any());
     }
 
     @Test
-    @DisplayName("Paso 2: Cuenta inexistente lanza CuentaNoEncontradaException")
+    @DisplayName("Paso 2: Cuenta inexistente lanza EntidadNoProcesableException")
     void procesarPagoCuentaInexistenteLanzaExcepcion() {
-        PagoServicioRequestDto request = PagoServicioRequestDto.builder()
+        PagoServicioRequestDto request = PagoTestDataBuilder.unPagoRequest()
                 .numCuenta("9999999999999999")
-                .idServicio(1L)
-                .idProducto(101L)
                 .monto(new BigDecimal("100.00"))
-                .upe("1234567890")
                 .bandera(false)
                 .referencia("REF-12345")
-                .pin(TestCredentials.testPin())
                 .build();
 
         when(cuentaRepository.findByNumeroCuentaWithLock("9999999999999999")).thenReturn(Optional.empty());

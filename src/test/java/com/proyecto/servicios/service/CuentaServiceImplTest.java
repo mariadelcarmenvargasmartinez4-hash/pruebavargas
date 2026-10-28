@@ -10,8 +10,11 @@ import com.proyecto.servicios.model.cuenta.SaldoCuentaDto;
 import com.proyecto.servicios.repositorys.cliente.ClienteRepository;
 import com.proyecto.servicios.repositorys.cliente.CuentaRepository;
 import com.proyecto.servicios.service.Impl.CuentaServiceImpl;
+import com.proyecto.servicios.util.ClienteTestDataBuilder;
+import com.proyecto.servicios.util.CuentaTestDataBuilder;
 import com.proyecto.servicios.util.GeneradorCuentaBancariaUtil;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -29,9 +32,12 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-// Pruebas unitarias para CuentaServiceImpl
+/**
+ * Pruebas unitarias para CuentaServiceImpl.
+ * Utiliza Test Data Builders para eliminar redundancias y mantener independencia de base de datos con Mocks.
+ */
 @ExtendWith(MockitoExtension.class)
-public class CuentaServiceImplTest {
+class CuentaServiceImplTest {
 
     @Mock
     private CuentaRepository cuentaRepository;
@@ -51,40 +57,15 @@ public class CuentaServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        clienteActivo = ClienteEntity.builder()
-                .id(1L)
-                .nombre("Juan")
-                .apellidoPaterno("Perez")
-                .apellidoMaterno("Lopez")
-                .activo(true)
-                .build();
-
-        clienteInactivo = ClienteEntity.builder()
-                .id(2L)
-                .nombre("Maria")
-                .apellidoPaterno("Gomez")
-                .apellidoMaterno("Ruiz")
-                .activo(false)
-                .build();
-
-        cuentaMock = CuentaEntity.builder()
-                .id(10L)
-                .cliente(clienteActivo)
-                .numeroCuenta("4815162342")
-                .clabe("012180004815162342")
-                .tipoCuenta("DEBITO")
-                .saldo(new BigDecimal("2000.00"))
-                .moneda("MXN")
-                .estatus("ACTIVA")
-                .build();
+        clienteActivo = ClienteTestDataBuilder.clienteValido();
+        clienteInactivo = ClienteTestDataBuilder.unClienteEntity().id(2L).activo(false).build();
+        cuentaMock = CuentaTestDataBuilder.cuentaValida(clienteActivo);
     }
 
-    // Valida creacion de cuenta exitosa para cliente activo
     @Test
+    @DisplayName("Crear cuenta exitosa para cliente activo")
     void testCrearCuenta_Exitoso() {
-        CuentaCreacionRequestDto request = CuentaCreacionRequestDto.builder()
-                .clienteId(1L)
-                .saldoInicial(new BigDecimal("1000.00"))
+        CuentaCreacionRequestDto request = CuentaTestDataBuilder.unaCuentaCreacionRequest()
                 .tipoCuenta("AHORRO")
                 .build();
 
@@ -102,12 +83,11 @@ public class CuentaServiceImplTest {
         verify(cuentaRepository).save(any(CuentaEntity.class));
     }
 
-    // Valida rechazo si el cliente esta inactivo
     @Test
+    @DisplayName("Crear cuenta rechaza cliente inactivo")
     void testCrearCuenta_ClienteInactivo() {
-        CuentaCreacionRequestDto request = CuentaCreacionRequestDto.builder()
+        CuentaCreacionRequestDto request = CuentaTestDataBuilder.unaCuentaCreacionRequest()
                 .clienteId(2L)
-                .saldoInicial(new BigDecimal("1000.00"))
                 .build();
 
         when(clienteRepository.findById(2L)).thenReturn(Optional.of(clienteInactivo));
@@ -116,8 +96,8 @@ public class CuentaServiceImplTest {
                 cuentaService.crearCuenta(request));
     }
 
-    // Valida consulta de saldo
     @Test
+    @DisplayName("Consultar saldo de cuenta existente")
     void testObtenerSaldoCuenta() {
         when(cuentaRepository.findByNumeroCuenta("4815162342")).thenReturn(Optional.of(cuentaMock));
 
@@ -129,8 +109,8 @@ public class CuentaServiceImplTest {
         assertEquals("ACTIVA", saldoDto.getEstatus());
     }
 
-    // Valida actualizacion parcial de cuenta
     @Test
+    @DisplayName("Actualizar cuenta parcialmente")
     void testActualizarCuenta_Parcial() {
         CuentaActualizacionRequestDto actualizacion = CuentaActualizacionRequestDto.builder()
                 .saldo(new BigDecimal("3500.00"))
