@@ -12,6 +12,7 @@ import com.proyecto.servicios.exception.ClienteYaRegistradoException;
 import com.proyecto.servicios.exception.CorreoDuplicadoException;
 import com.proyecto.servicios.exception.CredencialesInvalidasException;
 import com.proyecto.servicios.exception.CuentaNoEncontradaException;
+import com.proyecto.servicios.exception.EntidadNoProcesableException;
 import com.proyecto.servicios.exception.CurpDuplicadaException;
 import com.proyecto.servicios.exception.PasswordInvalidaException;
 import com.proyecto.servicios.exception.ProveedorPagoException;
@@ -24,6 +25,7 @@ import com.proyecto.servicios.model.common.GenericResponse;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -279,6 +281,28 @@ public class GlobalExceptionHandler {
         String mensaje = ex.getReason() != null ? ex.getReason() : ex.getMessage();
         log.warn("ResponseStatusException capturada ({}): {}", status, mensaje);
         return ResponseEntity.status(status).body(GenericResponse.error(status.value(), mensaje));
+    }
+
+    @ExceptionHandler(EntidadNoProcesableException.class)
+    public ResponseEntity<GenericResponse<Object>> handleEntidadNoProcesable(EntidadNoProcesableException ex) {
+        log.warn("Entidad o catálogo no procesable (422 UNPROCESSABLE ENTITY): {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(GenericResponse.error(HttpStatus.UNPROCESSABLE_ENTITY.value(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(DataAccessException.class)
+    public ResponseEntity<GenericResponse<Object>> handleDataAccessException(DataAccessException ex) {
+        log.error("Error de acceso o integridad en base de datos (422 UNPROCESSABLE ENTITY): {}", ex.getMessage());
+        String mensaje = "No fue posible procesar la entidad debido a restricciones de integridad o catálogos no encontrados en la base de datos.";
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(GenericResponse.error(HttpStatus.UNPROCESSABLE_ENTITY.value(), mensaje));
+    }
+
+    @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
+    public ResponseEntity<GenericResponse<Object>> handleIllegalArgumentException(RuntimeException ex) {
+        log.warn("Error en argumento o estado de la petición (400 BAD REQUEST): {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(GenericResponse.error(HttpStatus.BAD_REQUEST.value(), ex.getMessage()));
     }
 
     @ExceptionHandler(ProveedorPagoException.class)

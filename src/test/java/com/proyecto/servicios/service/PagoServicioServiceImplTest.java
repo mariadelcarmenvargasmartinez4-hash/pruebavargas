@@ -7,6 +7,7 @@ import com.proyecto.servicios.entity.gestopago.GestoPagoToken;
 import com.proyecto.servicios.entity.mongo.ProductoDocument;
 import com.proyecto.servicios.entity.pago.PagoServicioEntity;
 import com.proyecto.servicios.exception.CuentaNoEncontradaException;
+import com.proyecto.servicios.exception.EntidadNoProcesableException;
 import com.proyecto.servicios.exception.ProveedorPagoException;
 import com.proyecto.servicios.exception.ReglaNegocioException;
 import com.proyecto.servicios.model.gestopago.GestoPagoSendTxRequest;
@@ -536,7 +537,7 @@ class PagoServicioServiceImplTest {
 
         when(cuentaRepository.findByNumeroCuentaWithLock("9999999999999999")).thenReturn(Optional.empty());
 
-        assertThrows(CuentaNoEncontradaException.class, () -> pagoServicioService.procesarPago(request));
+        assertThrows(EntidadNoProcesableException.class, () -> pagoServicioService.procesarPago(request));
         verify(gestoPagoSendTxClient, never()).sendTx(anyString(), any());
     }
 }
