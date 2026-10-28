@@ -20,7 +20,6 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -33,22 +32,22 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.function.Predicate;
 
-// Controlador REST para la gestion de clientes personas fisicas
+// Controlador REST para la gestión de clientes personas físicas
 @RestController
 @RequestMapping("/clientes")
-@Tag(name = "Clientes", description = "Operaciones de registro, consultas dinámicas paginadas, actualización y baja lógica de clientes")
+@Tag(name = "Clientes", description = "Operaciones canónicas de registro, consultas dinámicas paginadas, actualización y baja lógica de clientes")
 public class ClienteController {
 
     private final ClienteService clienteService;
     private final SecurityService securityService;
 
-    // Inyeccion de dependencias por constructor
+    // Inyección de dependencias por constructor
     public ClienteController(ClienteService clienteService, SecurityService securityService) {
         this.clienteService = clienteService;
         this.securityService = securityService;
     }
 
-    // Registrar un nuevo cliente persona fisica
+    // Registrar un nuevo cliente persona física
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(summary = "Registrar un nuevo cliente", description = "Captura información personal, de contacto, domicilio y laboral, valida reglas de negocio y crea automáticamente su cuenta bancaria con saldo inicial")
     @ApiResponses(value = {
@@ -109,19 +108,15 @@ public class ClienteController {
         return ResponseEntity.ok(clienteService.obtenerClientePorId(id));
     }
 
-    // Actualizar parcialmente la información de un cliente (Patch / Put con control de autorización IDOR)
-    @PatchMapping(value = "/{id}", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-    @Operation(summary = "Actualizar parcialmente la información de un cliente", description = "Permite modificar datos de contacto, domicilio e información laboral. Valida permisos de autorización IDOR y estado activo.")
-    public ResponseEntity<ClienteRegistroResponseDto> actualizarParcialCliente(
-            @Parameter(description = "Identificador del cliente", example = "1") @PathVariable Long id,
-            @Valid @RequestBody ClienteActualizacionRequestDto requestDto) {
-        requestDto.toRecord(); // Validación temprana Fail-Fast en Record
-        securityService.validarAccesoCliente(id);
-        return ResponseEntity.ok(clienteService.actualizarCliente(id, requestDto));
-    }
-
+    // Actualizar información de un cliente (Ruta canónica PUT)
     @PutMapping(value = "/{id}", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-    @Operation(summary = "Actualizar información de un cliente", description = "Método PUT para actualizar datos de un cliente manteniendo CURP y RFC inmutables. Valida autorización IDOR y estado activo.")
+    @Operation(summary = "Actualizar información de un cliente", description = "Método PUT canónico para actualizar datos de un cliente manteniendo CURP y RFC inmutables. Valida autorización IDOR y estado activo.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Cliente actualizado exitosamente"),
+            @ApiResponse(responseCode = "400", description = "Datos de actualización inválidos"),
+            @ApiResponse(responseCode = "403", description = "Acceso denegado a modificar otros clientes"),
+            @ApiResponse(responseCode = "404", description = "Cliente no encontrado")
+    })
     public ResponseEntity<ClienteRegistroResponseDto> actualizarCliente(
             @Parameter(description = "Identificador del cliente", example = "1") @PathVariable Long id,
             @Valid @RequestBody ClienteActualizacionRequestDto requestDto) {
@@ -130,7 +125,7 @@ public class ClienteController {
         return ResponseEntity.ok(clienteService.actualizarCliente(id, requestDto));
     }
 
-    // 5. Baja Logica: Desactivar cliente sin eliminar registros fisicos de la base de datos
+    // Baja Lógica: Desactivar cliente sin eliminar registros físicos de la base de datos
     @DeleteMapping(value = "/{id}")
     @Operation(summary = "Baja lógica de cliente", description = "Desactiva el cliente y sus cuentas bancarias sin eliminar físicamente el registro en base de datos")
     @ApiResponses(value = {
@@ -144,7 +139,7 @@ public class ClienteController {
         return ResponseEntity.noContent().build();
     }
 
-    // Reactivar cliente previamente dado de baja logica
+    // Reactivar cliente previamente dado de baja lógica
     @PostMapping(value = "/{id}/reactivar", produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(summary = "Reactivar cliente", description = "Vuelve a activar un cliente previamente desactivado")
     public ResponseEntity<ClienteRegistroResponseDto> reactivarCliente(@Parameter(description = "Identificador del cliente a reactivar", example = "1") @PathVariable Long id) {

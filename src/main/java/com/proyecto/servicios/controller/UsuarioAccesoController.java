@@ -29,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Controlador REST para la administración integral de usuarios.
  * Cumple estrictamente con las directrices de arquitectura limpia y seguridad:
+ * - Ruta canónica estandarizada: /usuarios
  * - Sin @PathVariable ni @RequestParam: toda la información y filtros viajan en el cuerpo de la petición mediante DTOs.
  * - Validación declarativa con @Valid y Bean Validation.
  * - Búsqueda dinámica unificada en un solo endpoint.
@@ -36,7 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
  * - Manejo centralizado de excepciones sin bloques try-catch ni código repetitivo.
  */
 @RestController
-@RequestMapping(value = {"/usuarios", "/api/usuarios"})
+@RequestMapping("/usuarios")
 @Tag(name = "Administración de Usuarios", description = "Operaciones de administración, registro, consulta dinámica, actualización y control de estatus de usuarios")
 public class UsuarioAccesoController {
 
@@ -55,7 +56,7 @@ public class UsuarioAccesoController {
                 "Módulo de Administración de Usuarios activo"));
     }
 
-    @PostMapping(value = {"", "/crear"}, consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(summary = "Crear nuevo usuario", description = "Registra un nuevo usuario en el sistema con credenciales seguras y rol asignado.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Usuario registrado exitosamente"),
@@ -69,7 +70,7 @@ public class UsuarioAccesoController {
                 .body(GenericResponse.exito(usuario, "Usuario registrado exitosamente"));
     }
 
-    @PostMapping(value = {"/consulta", "/buscar"}, consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @PostMapping(value = "/consulta", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(summary = "Consulta dinámica y paginada de usuarios",
                description = "Único endpoint para consultar usuarios combinando filtros opcionales (id, username, rol, activo, fechas) con soporte de paginación y ordenamiento.")
     @ApiResponses(value = {
@@ -96,7 +97,7 @@ public class UsuarioAccesoController {
         return ResponseEntity.ok(GenericResponse.exito(usuario, "Detalle de usuario obtenido exitosamente"));
     }
 
-    @PutMapping(value = {"", "/actualizar"}, consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @PutMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(summary = "Actualizar información de usuario",
                description = "Actualiza los campos permitidos del usuario protegiendo campos de control del servidor como fechas de auditoría y credenciales.")
     @ApiResponses(value = {

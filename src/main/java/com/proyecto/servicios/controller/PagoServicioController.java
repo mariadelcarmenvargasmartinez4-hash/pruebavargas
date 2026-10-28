@@ -22,13 +22,14 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Controlador REST para la recepción, procesamiento y conciliación de pagos de servicios y recargas telefónicas.
  * Cumple con los estándares Senior de diseño:
+ * - Ruta canónica estandarizada: /pagos
  * - Toda la información viaja exclusivamente en el cuerpo de la petición (JSON) mediante DTOs.
  * - Sin uso de @PathVariable ni @RequestParam.
  * - Validación temprana con Bean Validation (@Valid) y Records Fail-Fast.
  * - Manejo centralizado de excepciones y respuestas uniformes con GenericResponse.
  */
 @RestController
-@RequestMapping(value = {"/pagos", "/api/pagos"})
+@RequestMapping("/pagos")
 @Tag(name = "Pagos de Servicios", description = "Servicio para la recepción, aplicación y conciliación de pagos de servicios y recargas telefónicas")
 public class PagoServicioController {
 
@@ -46,7 +47,7 @@ public class PagoServicioController {
                 "API de Pagos de Servicios activa"));
     }
 
-    @PostMapping(value = {"", "/servicio", "/procesar"}, consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(summary = "Paso 1: Recibir y procesar petición de pago de servicios o recargas",
                description = "Recibe los datos de la cuenta, servicio, UPE de 10 dígitos, parámetros de pago condicionales (teléfono si bandera=true, referencia si bandera=false) y PIN de autenticación.")
     @ApiResponses(value = {
@@ -62,7 +63,7 @@ public class PagoServicioController {
                 .body(GenericResponse.exito(respuesta, "Pago de servicio recibido y procesado exitosamente"));
     }
 
-    @PostMapping(value = {"/conciliar", "/consulta"}, consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @PostMapping(value = "/conciliar", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     @Operation(summary = "Consultar o conciliar estado de una transacción previa",
                description = "Permite verificar el estado de una transacción financiera mediante su UPE sin arriesgar cargos duplicados ni reintentos ciegos.")
     @ApiResponses(value = {

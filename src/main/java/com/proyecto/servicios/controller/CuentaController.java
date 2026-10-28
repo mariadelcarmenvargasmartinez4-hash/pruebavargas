@@ -20,7 +20,6 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -32,16 +31,16 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Optional;
 import java.util.function.Predicate;
 
-// Controlador REST para la gestion de cuentas bancarias
+// Controlador REST para la gestión de cuentas bancarias
 @RestController
 @RequestMapping("/cuentas")
-@Tag(name = "Cuentas", description = "Operaciones de creación, consulta unificada paginada, saldo y actualización de cuentas bancarias")
+@Tag(name = "Cuentas", description = "Operaciones canónicas de creación, consulta unificada paginada, saldo y actualización de cuentas bancarias")
 public class CuentaController {
 
     private final CuentaService cuentaService;
     private final SecurityService securityService;
 
-    // Inyeccion de dependencias por constructor
+    // Inyección de dependencias por constructor
     public CuentaController(CuentaService cuentaService, SecurityService securityService) {
         this.cuentaService = cuentaService;
         this.securityService = securityService;
@@ -115,25 +114,15 @@ public class CuentaController {
         return ResponseEntity.ok(cuentaService.obtenerSaldoCuenta(numeroCuenta));
     }
 
-    // Actualizar parcialmente la información de una cuenta (/cuentas/{numeroCuenta})
-    @PatchMapping(value = "/{numeroCuenta}", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-    @Operation(summary = "Actualizar parcialmente la información de una cuenta", description = "Permite actualizar saldo, tipo de cuenta o estatus sin modificar el número de cuenta. Valida autorización IDOR y reglas de baja lógica.")
+    // Actualizar información de una cuenta (Ruta canónica PUT)
+    @PutMapping(value = "/{numeroCuenta}", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "Actualizar información de una cuenta", description = "Método PUT canónico para actualizar datos de cuenta bancaria. Valida permisos IDOR y reglas de negocio.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Cuenta actualizada exitosamente"),
             @ApiResponse(responseCode = "400", description = "Datos de entrada inválidos o intento de activación en cliente inactivo"),
             @ApiResponse(responseCode = "403", description = "Acceso denegado a modificar cuentas de otros clientes"),
             @ApiResponse(responseCode = "404", description = "Cuenta no encontrada")
     })
-    public ResponseEntity<CuentaBancariaDto> actualizarParcialCuenta(
-            @Parameter(description = "Número de cuenta bancaria a actualizar", example = "4815162342") @PathVariable String numeroCuenta,
-            @Valid @RequestBody CuentaActualizacionRequestDto requestDto) {
-        requestDto.toRecord(); // Validación temprana Fail-Fast en Record
-        securityService.validarAccesoCuenta(numeroCuenta);
-        return ResponseEntity.ok(cuentaService.actualizarCuenta(numeroCuenta, requestDto));
-    }
-
-    @PutMapping(value = "/{numeroCuenta}", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-    @Operation(summary = "Actualizar información de una cuenta (PUT)", description = "Método PUT para actualizar datos de cuenta bancaria. Valida permisos y reglas de negocio.")
     public ResponseEntity<CuentaBancariaDto> actualizarCuenta(
             @Parameter(description = "Número de cuenta bancaria a actualizar", example = "4815162342") @PathVariable String numeroCuenta,
             @Valid @RequestBody CuentaActualizacionRequestDto requestDto) {
