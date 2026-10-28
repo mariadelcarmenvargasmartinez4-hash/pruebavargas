@@ -29,6 +29,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import com.proyecto.servicios.util.TestCredentials;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
@@ -77,14 +78,14 @@ class PagoServicioServiceImplTest {
     @InjectMocks
     private PagoServicioServiceImpl pagoServicioService;
 
-    private static final String PIN_HASH = "$2a$10$hashedPin1234Bcrypt";
+    private static final String PIN_HASH = TestCredentials.testPinHash();
 
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(pagoServicioService, "claveSecretaAes", "ClaveTestSeguraDe32BytesParaPruebas!");
         ReflectionTestUtils.setField(pagoServicioService, "idDistribuidor", 83);
         ReflectionTestUtils.setField(pagoServicioService, "codigoDispositivo", "GPS83-TPV-17");
-        ReflectionTestUtils.setField(pagoServicioService, "passwordDistribuidor", "testpass123");
+        ReflectionTestUtils.setField(pagoServicioService, "passwordDistribuidor", TestCredentials.distribuidorPass());
         ReflectionTestUtils.setField(pagoServicioService, "productoMongoRepository", productoMongoRepository);
     }
 
@@ -107,7 +108,7 @@ class PagoServicioServiceImplTest {
                 .upe("1234567890")
                 .bandera(true)
                 .telefono("5598765432")
-                .pin("1234")
+                .pin(TestCredentials.testPin())
                 .build();
 
         GestoPagoSendTxResponse responseProveedor = GestoPagoSendTxResponse.builder()
@@ -125,7 +126,7 @@ class PagoServicioServiceImplTest {
                 .build();
 
         when(cuentaRepository.findByNumeroCuentaWithLock("1234567890123456")).thenReturn(Optional.of(cuenta));
-        when(passwordEncoder.matches("1234", PIN_HASH)).thenReturn(true);
+        when(passwordEncoder.matches(TestCredentials.testPin(), PIN_HASH)).thenReturn(true);
         when(gestoPagoTokenService.obtenerTokenActivo(any(), any())).thenReturn(Optional.of(tokenActivo));
         when(aesEncryptionUtil.encriptar(anyString(), any())).thenReturn("ENCRYPTED_AES");
         when(aesEncryptionUtil.firmarPayload(anyString(), any())).thenReturn("SIGNATURE_HMAC");
@@ -166,7 +167,7 @@ class PagoServicioServiceImplTest {
                 .upe("1234567890")
                 .bandera(false)
                 .referencia("REF-12345")
-                .pin("1234")
+                .pin(TestCredentials.testPin())
                 .build();
 
         GestoPagoSendTxResponse responseProveedor = GestoPagoSendTxResponse.builder()
@@ -182,7 +183,7 @@ class PagoServicioServiceImplTest {
                 .build();
 
         when(cuentaRepository.findByNumeroCuentaWithLock("1234567890123456")).thenReturn(Optional.of(cuenta));
-        when(passwordEncoder.matches("1234", PIN_HASH)).thenReturn(true);
+        when(passwordEncoder.matches(TestCredentials.testPin(), PIN_HASH)).thenReturn(true);
         when(gestoPagoTokenService.obtenerTokenActivo(any(), any())).thenReturn(Optional.of(tokenActivo));
         when(aesEncryptionUtil.encriptar(anyString(), any())).thenReturn("ENCRYPTED_AES");
         when(aesEncryptionUtil.firmarPayload(anyString(), any())).thenReturn("SIGNATURE_HMAC");
@@ -214,7 +215,7 @@ class PagoServicioServiceImplTest {
                 .upe("1234567890")
                 .bandera(true)
                 .telefono("5512345678")
-                .pin("1234")
+                .pin(TestCredentials.testPin())
                 .build();
 
         GestoPagoToken tokenActivo = GestoPagoToken.builder()
@@ -225,7 +226,7 @@ class PagoServicioServiceImplTest {
                 .build();
 
         when(cuentaRepository.findByNumeroCuentaWithLock("1234567890123456")).thenReturn(Optional.of(cuenta));
-        when(passwordEncoder.matches("1234", PIN_HASH)).thenReturn(true);
+        when(passwordEncoder.matches(TestCredentials.testPin(), PIN_HASH)).thenReturn(true);
         when(gestoPagoTokenService.obtenerTokenActivo(any(), any())).thenReturn(Optional.of(tokenActivo));
         when(aesEncryptionUtil.encriptar(anyString(), any())).thenReturn("ENCRYPTED_AES");
         when(aesEncryptionUtil.firmarPayload(anyString(), any())).thenReturn("SIGNATURE_HMAC");
@@ -261,7 +262,7 @@ class PagoServicioServiceImplTest {
                 .upe("1234567890")
                 .bandera(true)
                 .telefono("5512345678")
-                .pin("1234")
+                .pin(TestCredentials.testPin())
                 .build();
 
         when(pagoServicioRepository.findByUpe("1234567890")).thenReturn(Optional.empty());
@@ -291,7 +292,7 @@ class PagoServicioServiceImplTest {
                 .upe("1234567890")
                 .bandera(true)
                 .telefono("5512345678")
-                .pin("1234")
+                .pin(TestCredentials.testPin())
                 .build();
 
         when(pagoServicioRepository.findByUpe("1234567890")).thenReturn(Optional.empty());
@@ -327,7 +328,7 @@ class PagoServicioServiceImplTest {
                 .upe("1234567890")
                 .bandera(true)
                 .telefono("5512345678")
-                .pin("1234")
+                .pin(TestCredentials.testPin())
                 .build();
 
         when(pagoServicioRepository.findByUpe("1234567890")).thenReturn(Optional.of(transaccionConcilia));
@@ -383,7 +384,7 @@ class PagoServicioServiceImplTest {
                 .upe("1234567890")
                 .bandera(true)
                 .telefono("5512345678")
-                .pin("1234")
+                .pin(TestCredentials.testPin())
                 .build();
 
         when(cuentaRepository.findByNumeroCuentaWithLock("1234567890123456")).thenReturn(Optional.of(cuentaSinPin));
@@ -418,7 +419,7 @@ class PagoServicioServiceImplTest {
                 .upe("1234567890")
                 .bandera(true)
                 .telefono("5512345678")
-                .pin("1234")
+                .pin(TestCredentials.testPin())
                 .build();
 
         when(pagoServicioRepository.findByUpe("1234567890")).thenReturn(Optional.of(pagoPrevio));
@@ -484,11 +485,11 @@ class PagoServicioServiceImplTest {
                 .upe("1234567890")
                 .bandera(true)
                 .telefono("5512345678")
-                .pin("1234")
+                .pin(TestCredentials.testPin())
                 .build();
 
         when(cuentaRepository.findByNumeroCuentaWithLock("1234567890123456")).thenReturn(Optional.of(cuenta));
-        when(passwordEncoder.matches("1234", PIN_HASH)).thenReturn(true);
+        when(passwordEncoder.matches(TestCredentials.testPin(), PIN_HASH)).thenReturn(true);
 
         assertThrows(ReglaNegocioException.class, () -> pagoServicioService.procesarPago(request));
         verify(gestoPagoSendTxClient, never()).sendTx(anyString(), any());
@@ -512,7 +513,7 @@ class PagoServicioServiceImplTest {
                 .upe("1234567890")
                 .bandera(true)
                 .telefono("5512345678")
-                .pin("1234")
+                .pin(TestCredentials.testPin())
                 .build();
 
         when(cuentaRepository.findByNumeroCuentaWithLock("1234567890123456")).thenReturn(Optional.of(cuenta));
@@ -532,7 +533,7 @@ class PagoServicioServiceImplTest {
                 .upe("1234567890")
                 .bandera(false)
                 .referencia("REF-12345")
-                .pin("1234")
+                .pin(TestCredentials.testPin())
                 .build();
 
         when(cuentaRepository.findByNumeroCuentaWithLock("9999999999999999")).thenReturn(Optional.empty());

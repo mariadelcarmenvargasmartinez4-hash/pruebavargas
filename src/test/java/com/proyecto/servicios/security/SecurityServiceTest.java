@@ -6,6 +6,7 @@ import com.proyecto.servicios.entity.cliente.UsuarioAccesoEntity;
 import com.proyecto.servicios.repositorys.cliente.ClienteRepository;
 import com.proyecto.servicios.repositorys.cliente.CuentaRepository;
 import com.proyecto.servicios.repositorys.cliente.UsuarioAccesoRepository;
+import com.proyecto.servicios.util.TestCredentials;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -52,7 +53,7 @@ public class SecurityServiceTest {
 
     @Test
     void testValidarAccesoCliente_MismoCliente_PermiteAcceso() {
-        String username = "cliente@test.com";
+        String username = TestCredentials.user("cliente");
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(username, null, List.of(new SimpleGrantedAuthority("ROLE_CLIENTE"))));
 
@@ -66,7 +67,7 @@ public class SecurityServiceTest {
 
     @Test
     void testValidarAccesoCliente_DiferenteCliente_LanzaAccessDeniedException() {
-        String username = "cliente@test.com";
+        String username = TestCredentials.user("cliente");
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(username, null, List.of(new SimpleGrantedAuthority("ROLE_CLIENTE"))));
 
@@ -80,7 +81,7 @@ public class SecurityServiceTest {
 
     @Test
     void testValidarAccesoCliente_Admin_PermiteAccesoCualquierId() {
-        String username = "admin@banco.com";
+        String username = TestCredentials.user("admin");
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(username, null, List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
 
@@ -89,7 +90,7 @@ public class SecurityServiceTest {
 
     @Test
     void testValidarAccesoCuenta_TitularLegitimo_PermiteAcceso() {
-        String username = "cliente@test.com";
+        String username = TestCredentials.user("cliente");
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(username, null, List.of(new SimpleGrantedAuthority("ROLE_CLIENTE"))));
 
@@ -105,7 +106,7 @@ public class SecurityServiceTest {
 
     @Test
     void testValidarAccesoCuenta_CuentaAjena_LanzaAccessDeniedException() {
-        String username = "atacante@test.com";
+        String username = TestCredentials.user("atacante");
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(username, null, List.of(new SimpleGrantedAuthority("ROLE_CLIENTE"))));
 

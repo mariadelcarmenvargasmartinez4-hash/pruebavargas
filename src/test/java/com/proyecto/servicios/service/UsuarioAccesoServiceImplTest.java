@@ -30,6 +30,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import com.proyecto.servicios.util.TestCredentials;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.LocalDateTime;
@@ -72,7 +73,7 @@ class UsuarioAccesoServiceImplTest {
 
         UsuarioCreacionRequestDto request = UsuarioCreacionRequestDto.builder()
                 .username("cliente@empresa.com")
-                .password("Password123#")
+                .password(TestCredentials.altPass())
                 .rol("CLIENTE")
                 .clienteId(1L)
                 .build();
@@ -81,7 +82,7 @@ class UsuarioAccesoServiceImplTest {
                 .id(10L)
                 .cliente(cliente)
                 .username("cliente@empresa.com")
-                .passwordHash("encoded-pass")
+                .passwordHash(TestCredentials.testPassHash())
                 .rol("CLIENTE")
                 .activo(true)
                 .fechaCreacion(LocalDateTime.now())
@@ -91,7 +92,7 @@ class UsuarioAccesoServiceImplTest {
         when(usuarioRepository.existsByUsername("cliente@empresa.com")).thenReturn(false);
         when(clienteRepository.findById(1L)).thenReturn(Optional.of(cliente));
         when(usuarioRepository.existsByClienteId(1L)).thenReturn(false);
-        when(passwordEncoder.encode("Password123#")).thenReturn("encoded-pass");
+        when(passwordEncoder.encode(TestCredentials.altPass())).thenReturn(TestCredentials.testPassHash());
         when(usuarioRepository.save(any(UsuarioAccesoEntity.class))).thenReturn(usuarioGuardado);
 
         UsuarioResponseDto resultado = usuarioService.crearUsuario(request);
@@ -108,7 +109,7 @@ class UsuarioAccesoServiceImplTest {
     void crearUsuarioDuplicadoLanzaExcepcion() {
         UsuarioCreacionRequestDto request = UsuarioCreacionRequestDto.builder()
                 .username("existente@empresa.com")
-                .password("Password123#")
+                .password(TestCredentials.altPass())
                 .rol("ADMIN")
                 .build();
 
@@ -127,7 +128,7 @@ class UsuarioAccesoServiceImplTest {
 
         UsuarioCreacionRequestDto request = UsuarioCreacionRequestDto.builder()
                 .username("cliente2@empresa.com")
-                .password("Password123#")
+                .password(TestCredentials.altPass())
                 .rol("CLIENTE")
                 .clienteId(2L)
                 .build();
@@ -143,7 +144,7 @@ class UsuarioAccesoServiceImplTest {
     void crearUsuarioClienteNoEncontradoLanzaExcepcion() {
         UsuarioCreacionRequestDto request = UsuarioCreacionRequestDto.builder()
                 .username("cliente3@empresa.com")
-                .password("Password123#")
+                .password(TestCredentials.altPass())
                 .rol("CLIENTE")
                 .clienteId(999L)
                 .build();
@@ -249,23 +250,23 @@ class UsuarioAccesoServiceImplTest {
     void cambiarPasswordExitoso() {
         UsuarioCambioPasswordRequestDto request = UsuarioCambioPasswordRequestDto.builder()
                 .id(1L)
-                .passwordActual("PasswordViejo1#")
-                .nuevaPassword("PasswordNuevo2#")
+                .passwordActual(TestCredentials.oldPass())
+                .nuevaPassword(TestCredentials.newPass())
                 .build();
 
         UsuarioAccesoEntity usuario = UsuarioAccesoEntity.builder()
                 .id(1L)
-                .passwordHash("encoded-old-pass")
+                .passwordHash(TestCredentials.testPassHash())
                 .build();
 
         when(usuarioRepository.findById(1L)).thenReturn(Optional.of(usuario));
-        when(passwordEncoder.matches("PasswordViejo1#", "encoded-old-pass")).thenReturn(true);
-        when(passwordEncoder.encode("PasswordNuevo2#")).thenReturn("encoded-new-pass");
+        when(passwordEncoder.matches(TestCredentials.oldPass(), TestCredentials.testPassHash())).thenReturn(true);
+        when(passwordEncoder.encode(TestCredentials.newPass())).thenReturn(TestCredentials.testPassHash());
 
         usuarioService.cambiarPassword(request);
 
         verify(usuarioRepository).save(usuario);
-        assertEquals("encoded-new-pass", usuario.getPasswordHash());
+        assertEquals(TestCredentials.testPassHash(), usuario.getPasswordHash());
     }
 
     @Test
@@ -273,17 +274,17 @@ class UsuarioAccesoServiceImplTest {
     void cambiarPasswordIncorrectaLanzaExcepcion() {
         UsuarioCambioPasswordRequestDto request = UsuarioCambioPasswordRequestDto.builder()
                 .id(1L)
-                .passwordActual("PasswordErroneo#")
-                .nuevaPassword("PasswordNuevo2#")
+                .passwordActual(TestCredentials.wrongPass())
+                .nuevaPassword(TestCredentials.newPass())
                 .build();
 
         UsuarioAccesoEntity usuario = UsuarioAccesoEntity.builder()
                 .id(1L)
-                .passwordHash("encoded-old-pass")
+                .passwordHash(TestCredentials.testPassHash())
                 .build();
 
         when(usuarioRepository.findById(1L)).thenReturn(Optional.of(usuario));
-        when(passwordEncoder.matches("PasswordErroneo#", "encoded-old-pass")).thenReturn(false);
+        when(passwordEncoder.matches(TestCredentials.wrongPass(), TestCredentials.testPassHash())).thenReturn(false);
 
         assertThrows(PasswordInvalidaException.class, () -> usuarioService.cambiarPassword(request));
     }
@@ -355,12 +356,12 @@ class UsuarioAccesoServiceImplTest {
                 .correoElectronico("cliente@example.com")
                 .activo(true)
                 .build();
-        UsuarioAgregarRequestDto request = new UsuarioAgregarRequestDto(7L, "Segura123#");
+        UsuarioAgregarRequestDto request = new UsuarioAgregarRequestDto(7L, TestCredentials.validPass());
         UsuarioAccesoEntity usuarioGuardado = UsuarioAccesoEntity.builder()
                 .id(12L)
                 .cliente(cliente)
                 .username("cliente@example.com")
-                .passwordHash("bcrypt-hash")
+                .passwordHash(TestCredentials.testPassHash())
                 .rol("CLIENTE")
                 .activo(true)
                 .build();
@@ -368,14 +369,14 @@ class UsuarioAccesoServiceImplTest {
         when(clienteRepository.findById(7L)).thenReturn(Optional.of(cliente));
         when(usuarioRepository.existsByClienteId(7L)).thenReturn(false);
         when(usuarioRepository.existsByUsername("cliente@example.com")).thenReturn(false);
-        when(passwordEncoder.encode("Segura123#")).thenReturn("bcrypt-hash");
+        when(passwordEncoder.encode(TestCredentials.validPass())).thenReturn(TestCredentials.testPassHash());
         when(usuarioRepository.save(any(UsuarioAccesoEntity.class))).thenReturn(usuarioGuardado);
 
         UsuarioAccesoDto response = usuarioService.agregarUsuario(request);
 
         assertEquals("cliente@example.com", response.getUsername());
         assertEquals(true, response.getActivo());
-        verify(passwordEncoder).encode("Segura123#");
+        verify(passwordEncoder).encode(TestCredentials.validPass());
         verify(usuarioRepository).save(any(UsuarioAccesoEntity.class));
     }
 }

@@ -5,6 +5,7 @@ import com.proyecto.servicios.config.GlobalExceptionHandler;
 import com.proyecto.servicios.model.cliente.ClienteRegistroRequestDto;
 import com.proyecto.servicios.security.SecurityService;
 import com.proyecto.servicios.service.ClienteService;
+import com.proyecto.servicios.util.TestCredentials;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -73,7 +74,7 @@ public class ClienteControllerValidationIntegrationTest {
                 .empresa("Global Bank SA")
                 .ingresoMensual(new BigDecimal("42000.00"))
                 .tipoCuenta("AHORRO")
-                .password("NuevaClaveSuperSegura2026!")
+                .password(TestCredentials.validPass())
                 .build();
     }
 

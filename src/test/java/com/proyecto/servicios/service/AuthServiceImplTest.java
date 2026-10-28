@@ -9,6 +9,7 @@ import com.proyecto.servicios.model.auth.LoginResponseDto;
 import com.proyecto.servicios.repositorys.cliente.UsuarioAccesoRepository;
 import com.proyecto.servicios.service.Impl.AuthServiceImpl;
 import com.proyecto.servicios.util.JwtUtil;
+import com.proyecto.servicios.util.TestCredentials;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,7 +45,7 @@ class AuthServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        request = new LoginRequestDto("cliente@example.com", "Segura123#");
+        request = new LoginRequestDto("cliente@example.com", TestCredentials.validPass());
         ClienteEntity cliente = ClienteEntity.builder()
                 .id(7L)
                 .nombre("Ana")
@@ -55,7 +56,7 @@ class AuthServiceImplTest {
         usuario = UsuarioAccesoEntity.builder()
                 .cliente(cliente)
                 .username("cliente@example.com")
-                .passwordHash("bcrypt-hash")
+                .passwordHash(TestCredentials.testPassHash())
                 .activo(true)
                 .build();
     }
@@ -63,7 +64,7 @@ class AuthServiceImplTest {
     @Test
     void iniciarSesionConCredencialesValidasGeneraToken() {
         when(usuarioRepository.findByUsername("cliente@example.com")).thenReturn(Optional.of(usuario));
-        when(passwordEncoder.matches("Segura123#", "bcrypt-hash")).thenReturn(true);
+        when(passwordEncoder.matches(TestCredentials.validPass(), TestCredentials.testPassHash())).thenReturn(true);
         when(jwtUtil.generarToken("cliente@example.com", 7L)).thenReturn("jwt-token");
         when(jwtUtil.getExpirationSeconds()).thenReturn(3600L);
 
@@ -72,13 +73,13 @@ class AuthServiceImplTest {
         assertEquals("jwt-token", response.getToken());
         assertEquals("Ana Lopez Garcia", response.getNombreCompleto());
         assertEquals(7L, response.getClienteId());
-        verify(passwordEncoder).matches("Segura123#", "bcrypt-hash");
+        verify(passwordEncoder).matches(TestCredentials.validPass(), TestCredentials.testPassHash());
     }
 
     @Test
     void iniciarSesionRechazaContrasenaIncorrecta() {
         when(usuarioRepository.findByUsername("cliente@example.com")).thenReturn(Optional.of(usuario));
-        when(passwordEncoder.matches("Segura123#", "bcrypt-hash")).thenReturn(false);
+        when(passwordEncoder.matches(TestCredentials.validPass(), TestCredentials.testPassHash())).thenReturn(false);
 
         assertThrows(CredencialesInvalidasException.class, () -> authService.iniciarSesion(request));
     }

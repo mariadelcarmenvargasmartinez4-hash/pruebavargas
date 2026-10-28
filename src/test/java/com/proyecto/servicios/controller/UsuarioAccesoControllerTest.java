@@ -14,6 +14,7 @@ import com.proyecto.servicios.model.usuario.UsuarioDetalleRequestDto;
 import com.proyecto.servicios.model.usuario.UsuarioEstadoRequestDto;
 import com.proyecto.servicios.model.usuario.UsuarioResponseDto;
 import com.proyecto.servicios.service.UsuarioAccesoService;
+import com.proyecto.servicios.util.TestCredentials;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -67,7 +68,7 @@ class UsuarioAccesoControllerTest {
     void crearUsuarioExitosoRetorna201() throws Exception {
         UsuarioCreacionRequestDto request = UsuarioCreacionRequestDto.builder()
                 .username("nuevo.usuario@empresa.com")
-                .password("Password123#")
+                .password(TestCredentials.altPass())
                 .rol("CLIENTE")
                 .clienteId(1L)
                 .build();
@@ -117,7 +118,7 @@ class UsuarioAccesoControllerTest {
     void crearUsuarioDuplicadoRetorna409() throws Exception {
         UsuarioCreacionRequestDto request = UsuarioCreacionRequestDto.builder()
                 .username("existente@empresa.com")
-                .password("Password123#")
+                .password(TestCredentials.altPass())
                 .rol("CLIENTE")
                 .build();
 
@@ -238,8 +239,8 @@ class UsuarioAccesoControllerTest {
     void cambiarPasswordRetorna200() throws Exception {
         UsuarioCambioPasswordRequestDto request = UsuarioCambioPasswordRequestDto.builder()
                 .id(2L)
-                .passwordActual("PasswordViejo1#")
-                .nuevaPassword("PasswordNuevo2#")
+                .passwordActual(TestCredentials.oldPass())
+                .nuevaPassword(TestCredentials.newPass())
                 .build();
 
         doNothing().when(usuarioService).cambiarPassword(any(UsuarioCambioPasswordRequestDto.class));
@@ -257,8 +258,8 @@ class UsuarioAccesoControllerTest {
     void cambiarPasswordIncorrectaRetorna400() throws Exception {
         UsuarioCambioPasswordRequestDto request = UsuarioCambioPasswordRequestDto.builder()
                 .id(2L)
-                .passwordActual("PasswordErroneo1#")
-                .nuevaPassword("PasswordNuevo2#")
+                .passwordActual(TestCredentials.wrongPass())
+                .nuevaPassword(TestCredentials.newPass())
                 .build();
 
         doThrow(new PasswordInvalidaException("La contraseña actual proporcionada no coincide con los registros"))

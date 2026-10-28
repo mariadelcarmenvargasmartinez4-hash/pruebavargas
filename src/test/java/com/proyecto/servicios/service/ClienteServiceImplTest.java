@@ -18,6 +18,7 @@ import com.proyecto.servicios.repositorys.cliente.UsuarioAccesoRepository;
 import com.proyecto.servicios.service.Impl.ClienteServiceImpl;
 import com.proyecto.servicios.util.GeneradorCuentaBancariaUtil;
 import com.proyecto.servicios.util.MetricasTextoUtil;
+import com.proyecto.servicios.util.TestCredentials;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -41,7 +42,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-// Pruebas unitarias para ClienteServiceImpl cubriendo reglas de negocio, validaciones, baja logica y consultas
+// Pruebas unitarias para ClienteServiceImpl cubriendo reglas de negocio, validaciones, baja lógica y consultas
 @ExtendWith(MockitoExtension.class)
 public class ClienteServiceImplTest {
 
@@ -164,7 +165,7 @@ public class ClienteServiceImplTest {
                 .id(1L)
                 .cliente(clienteMock)
                 .username("juan.perez@example.com")
-                .passwordHash("$2a$10$hashedpassword")
+                .passwordHash(TestCredentials.testPassHash())
                 .activo(true)
                 .fechaCreacion(LocalDateTime.now())
                 .build();
@@ -173,7 +174,7 @@ public class ClienteServiceImplTest {
     // Valida registro exitoso en clientes, domicilios, cuentas y usuario de acceso
     @Test
     void testRegistrarCliente_Exitoso() {
-        requestValido.setPassword("Segura123#");
+        requestValido.setPassword(TestCredentials.validPass());
         when(sexoService.esValidoYActivo(anyString())).thenReturn(true);
         when(nacionalidadService.esValidoYActivo(anyString())).thenReturn(true);
         when(estadoCivilService.esValidoYActivo(anyString())).thenReturn(true);
@@ -185,7 +186,7 @@ public class ClienteServiceImplTest {
         when(cuentaRepository.existsByNumeroCuenta(anyString())).thenReturn(false);
         when(generadorCuentaUtil.generarNumeroCuenta()).thenReturn("4815162342");
         when(generadorCuentaUtil.generarClabe("4815162342")).thenReturn("012180004815162342");
-        when(passwordEncoder.encode(anyString())).thenReturn("$2a$10$hashedpassword");
+        when(passwordEncoder.encode(anyString())).thenReturn(TestCredentials.testPassHash());
         when(clienteRepository.save(any(ClienteEntity.class))).thenReturn(clienteMock);
         when(domicilioRepository.save(any(DomicilioEntity.class))).thenReturn(domicilioMock);
         when(cuentaRepository.save(any(CuentaEntity.class))).thenReturn(cuentaMock);
