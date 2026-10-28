@@ -1,7 +1,10 @@
 package com.proyecto.servicios.entity.gestopago;
 
 import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
@@ -10,6 +13,9 @@ import java.time.LocalDateTime;
 @Table(name = "gestopago_tokens")
 @Getter
 @Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class GestoPagoToken {
 
     @Id
@@ -38,6 +44,7 @@ public class GestoPagoToken {
     private LocalDateTime fechaActualizacion;
 
     @Column(name = "activo", nullable = false)
+    @Builder.Default
     private Boolean activo = true;
 
     @PrePersist
@@ -49,5 +56,15 @@ public class GestoPagoToken {
     @PreUpdate
     void onUpdate() {
         fechaActualizacion = LocalDateTime.now();
+    }
+
+    public boolean esVigente() {
+        if (!Boolean.TRUE.equals(activo) || token == null || token.isBlank()) {
+            return false;
+        }
+        if (fechaActualizacion != null && expiresIn != null) {
+            return fechaActualizacion.plusSeconds(expiresIn).isAfter(LocalDateTime.now());
+        }
+        return true;
     }
 }

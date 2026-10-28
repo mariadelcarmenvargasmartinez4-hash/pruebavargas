@@ -1,7 +1,11 @@
 package com.proyecto.servicios.repositorys.cliente;
 
 import com.proyecto.servicios.entity.cliente.CuentaEntity;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
 
@@ -17,6 +21,10 @@ public interface CuentaRepository extends JpaRepository<CuentaEntity, Long>, Jpa
     boolean existsByClabe(String clabe);
 
     Optional<CuentaEntity> findByNumeroCuenta(String numeroCuenta);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT c FROM CuentaEntity c WHERE c.numeroCuenta = :numeroCuenta")
+    Optional<CuentaEntity> findByNumeroCuentaWithLock(@Param("numeroCuenta") String numeroCuenta);
 
     Optional<CuentaEntity> findByClabe(String clabe);
 
