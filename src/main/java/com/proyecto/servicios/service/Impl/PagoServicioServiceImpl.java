@@ -4,6 +4,7 @@ import com.proyecto.servicios.client.GestoPagoAuthClient;
 import com.proyecto.servicios.client.GestoPagoSendTxClient;
 import com.proyecto.servicios.entity.cliente.CuentaEntity;
 import com.proyecto.servicios.entity.gestopago.GestoPagoToken;
+import com.proyecto.servicios.entity.mongo.ProductoDocument;
 import com.proyecto.servicios.entity.pago.PagoServicioEntity;
 import com.proyecto.servicios.exception.CuentaNoEncontradaException;
 import com.proyecto.servicios.exception.ProveedorPagoException;
@@ -11,16 +12,19 @@ import com.proyecto.servicios.exception.ReglaNegocioException;
 import com.proyecto.servicios.model.gestopago.GestoPagoAuthResponse;
 import com.proyecto.servicios.model.gestopago.GestoPagoSendTxRequest;
 import com.proyecto.servicios.model.gestopago.GestoPagoSendTxResponse;
+import com.proyecto.servicios.model.pago.PagoConciliacionRequestDto;
 import com.proyecto.servicios.model.pago.PagoServicioRequestDto;
 import com.proyecto.servicios.model.pago.PagoServicioRequestRecord;
 import com.proyecto.servicios.model.pago.PagoServicioResponseDto;
 import com.proyecto.servicios.repositorys.cliente.CuentaRepository;
+import com.proyecto.servicios.repositorys.mongo.ProductoMongoRepository;
 import com.proyecto.servicios.repositorys.pago.PagoServicioRepository;
 import com.proyecto.servicios.service.GestoPagoTokenService;
 import com.proyecto.servicios.service.PagoServicioService;
 import com.proyecto.servicios.util.AesEncryptionUtil;
 import com.proyecto.servicios.util.DeclarativeAssertUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -36,10 +40,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 
 /**
- * Implementación de negocio Senior para el procesamiento seguro de pagos con GestoPago:
- * - Paso 2: Validaciones de negocio previas (cuenta activa con bloqueo pesimista, PIN seguro con rate-limiting, saldo y formatos).
- * - Paso 3: Integración con 3 FeignClients, tokens vigentes, payload JSON independiente de Locale y cifrado AES-GCM + HMAC-SHA256.
- * - Paso 4: Descuento atómico de saldo exclusivamente ante respuesta "01", auditoría local persistente y manejo de idempotencia.
+ * Implementación de negocio Senior para el procesamiento seguro de pagos con GestoPago (POST /sistema/service/sendTx.do):
+ * - Paso 2: Validaciones de negocio previas (cuenta activa con bloqueo pesimista, validación contra catálogo MongoDB,
+ *           PIN seguro con rate-limiting, saldo suficiente, tipos y formatos).
+ * - Paso 3: Integración con 3 FeignClients, tokens vigentes administrados de forma segura, payload JSON independiente de Locale
+ *           y cifrado simétrico robusto AES-GCM (128-bit tag, 12-byte IV) con firma HMAC-SHA256.
+ * - Paso 4: Descuento atómico de saldo exclusivamente tras código 01, persistencia previa de auditoría, idempotencia estricta
+ *           y resiliencia financiera mediante estado EN_CONCILIACION ante timeouts del proveedor externo.
  */
 @Slf4j
 @Service
@@ -55,6 +62,9 @@ public class PagoServicioServiceImpl implements PagoServicioService {
     private final GestoPagoTokenService gestoPagoTokenService;
     private final AesEncryptionUtil aesEncryptionUtil;
     private final PasswordEncoder passwordEncoder;
+
+    @Autowired(required = false)
+    private ProductoMongoRepository productoMongoRepository;
 
     @Value("${gestopago.aes.secret-key:${JWT_SECRET:ClaveSeguraParaCifradoAES256GestoPago!}}")
     private String claveSecretaAes;
@@ -94,15 +104,25 @@ public class PagoServicioServiceImpl implements PagoServicioService {
         // 1. Validación de Formatos y tipos (Fail-Fast en Record inmutable)
         PagoServicioRequestRecord record = request.toRecord();
 
-        // 2. Control de Concurrencia e Idempotencia: Verificar si el UPE ya fue procesado
+        // 2. Control de Concurrencia e Idempotencia: Verificar si el UPE ya fue recibido previamente
         Optional<PagoServicioEntity> pagoExistente = pagoServicioRepository.findByUpe(record.upe());
-        if (pagoExistente.isPresent() && "APLICADO".equalsIgnoreCase(pagoExistente.get().getEstatus())) {
+        if (pagoExistente.isPresent()) {
             PagoServicioEntity previo = pagoExistente.get();
-            log.info("Petición de pago idempotente detectada para UPE {}. Retornando resultado previamente aplicado.", record.upe());
-            return construirRespuestaIdempotente(previo);
+            if ("APLICADO".equalsIgnoreCase(previo.getEstatus())) {
+                log.info("Petición de pago idempotente detectada para UPE {}. Retornando resultado previamente aplicado.", record.upe());
+                return construirRespuestaIdempotente(previo);
+            }
+            if ("EN_CONCILIACION".equalsIgnoreCase(previo.getEstatus()) || "PROCESANDO".equalsIgnoreCase(previo.getEstatus())) {
+                throw new ReglaNegocioException("La transacción con UPE " + record.upe() +
+                        " se encuentra actualmente en estado " + previo.getEstatus() + " (Folio: " + previo.getFolioTransaccion() +
+                        "). No se puede procesar una nueva solicitud hasta que sea consultada o conciliada.");
+            }
         }
 
-        // 3. Validación de la Cuenta con Bloqueo Pesimista (previene sobregiros por transacciones concurrentes)
+        // 3. Validación de Catálogo de Productos y Restricciones de Monto
+        validarProductoEnCatalogo(record.idServicio(), record.idProducto(), record.monto());
+
+        // 4. Validación de la Cuenta con Bloqueo Pesimista (previene sobregiros por transacciones concurrentes)
         CuentaEntity cuenta = cuentaRepository.findByNumeroCuentaWithLock(record.numCuenta())
                 .or(() -> cuentaRepository.findByNumeroCuenta(record.numCuenta()))
                 .orElseThrow(() -> new CuentaNoEncontradaException(
@@ -112,10 +132,10 @@ public class PagoServicioServiceImpl implements PagoServicioService {
                 "ACTIVA".equalsIgnoreCase(cuenta.getEstatus()),
                 () -> new ReglaNegocioException("La cuenta bancaria no se encuentra ACTIVA para transacciones"));
 
-        // 4. Validación estricta del PIN o Pass Seguro con Throttling / Rate-Limiting
+        // 5. Validación estricta del PIN o Pass Seguro con Throttling / Rate-Limiting
         validarPinSeguro(cuenta, record.pin());
 
-        // 5. Validación de Saldo
+        // 6. Validación de Saldo Disponible
         DeclarativeAssertUtil.asegurar(
                 cuenta.getSaldo().compareTo(record.monto()) >= 0,
                 () -> new ReglaNegocioException(
@@ -173,20 +193,29 @@ public class PagoServicioServiceImpl implements PagoServicioService {
         pagoServicioRepository.save(transaccion);
 
         // =========================================================================
-        // PASO 4: LLAMADA A SENDTX, EVALUACIÓN DE RESPUESTA Y DESCUENTO DE SALDO
+        // PASO 4: LLAMADA A SENDTX, EVALUACIÓN DE RESPUESTA, DESCUENTO Y CONCILIACIÓN
         // =========================================================================
 
         GestoPagoSendTxResponse respuestaProveedor;
         try {
             respuestaProveedor = ejecutarEnvioSendTx(sendTxRequest, token);
         } catch (ProveedorPagoException ex) {
-            transaccion.setEstatus("FALLO_COMUNICACION");
+            // Riesgo financiero crítico: un timeout no implica necesariamente que el proveedor no procesó la transacción.
+            // Para proteger el dinero del cliente y evitar cargos dobles por reintentos ciegos:
+            // 1. NO se descuenta saldo de inmediato sin confirmación.
+            // 2. La transacción se marca en estado EN_CONCILIACION.
+            // 3. Se lanza excepción informando el estado para requerir consulta/conciliación previa.
+            transaccion.setEstatus("EN_CONCILIACION");
             pagoServicioRepository.save(transaccion);
-            throw ex;
+            log.warn("Transacción con UPE {} marcada EN_CONCILIACION ante timeout o fallo de red con GestoPago. Folio: {}",
+                    record.upe(), folioInicial);
+            throw new ProveedorPagoException(
+                    String.format("La comunicación con el proveedor externo entró en tiempo de espera. La transacción quedó EN_CONCILIACION con folio %s. No se descontó saldo. Consulte el estado de la UPE antes de reintentar.", folioInicial),
+                    ex);
         }
 
         // Evaluación de la respuesta:
-        // Si la respuesta es distinta de "01" o error: NO se descuenta saldo
+        // Si la respuesta es distinta de "01" o rechazo: NO se descuenta saldo
         if (respuestaProveedor == null || !respuestaProveedor.esExitosa()) {
             transaccion.setEstatus("RECHAZADO");
             pagoServicioRepository.save(transaccion);
@@ -198,7 +227,7 @@ public class PagoServicioServiceImpl implements PagoServicioService {
             throw new ReglaNegocioException("Transacción no exitosa ante el proveedor: " + mensajeError);
         }
 
-        // Si retorna código 01 (Transacción Exitosa), en ese exacto instante se descuenta el saldo
+        // Si retorna código 01 (Transacción Exitosa), en ese exacto instante se descuenta el saldo en la base de datos
         BigDecimal saldoAnterior = cuenta.getSaldo();
         BigDecimal saldoActual = saldoAnterior.subtract(record.monto());
         cuenta.setSaldo(saldoActual);
@@ -236,6 +265,75 @@ public class PagoServicioServiceImpl implements PagoServicioService {
                 .mensaje("Pago aplicado exitosamente con código 01 del proveedor")
                 .fechaOperacion(transaccion.getFechaOperacion())
                 .build();
+    }
+
+    @Override
+    @Transactional(transactionManager = "sfTransactionManager")
+    public PagoServicioResponseDto consultarOConciliarPago(PagoConciliacionRequestDto request) {
+        DeclarativeAssertUtil.asegurar(request != null && request.getUpe() != null && request.getUpe().matches("^\\d{10}$"),
+                "El identificador UPE debe ser un número de 10 dígitos válido para conciliación");
+
+        PagoServicioEntity transaccion = pagoServicioRepository.findByUpe(request.getUpe())
+                .orElseThrow(() -> new ReglaNegocioException("No se encontró ninguna transacción registrada con la UPE: " + request.getUpe()));
+
+        if ("APLICADO".equalsIgnoreCase(transaccion.getEstatus())) {
+            return construirRespuestaIdempotente(transaccion);
+        }
+
+        String tipoOperacion = Boolean.TRUE.equals(transaccion.getEsRecargaTelefonica()) ? "RECARGA_TELEFONICA" : "PAGO_SERVICIO_REFERENCIA";
+        String destinoPago = Boolean.TRUE.equals(transaccion.getEsRecargaTelefonica()) ? transaccion.getTelefono() : transaccion.getReferencia();
+
+        return PagoServicioResponseDto.builder()
+                .folioTransaccion(transaccion.getFolioTransaccion())
+                .numCuenta(transaccion.getNumCuenta())
+                .idServicio(transaccion.getIdServicio())
+                .idProducto(transaccion.getIdProducto())
+                .idConcepto(transaccion.getIdConcepto())
+                .idDistribuidor(transaccion.getIdDistribuidor())
+                .monto(transaccion.getMonto())
+                .upe(transaccion.getUpe())
+                .tipoOperacion(tipoOperacion)
+                .destinoPago(destinoPago)
+                .estatus(transaccion.getEstatus())
+                .mensaje("Estado actual de la transacción en sistema: " + transaccion.getEstatus())
+                .fechaOperacion(transaccion.getFechaOperacion())
+                .build();
+    }
+
+    private void validarProductoEnCatalogo(Long idServicio, Long idProducto, BigDecimal monto) {
+        if (productoMongoRepository == null) {
+            return;
+        }
+
+        Optional<ProductoDocument> productoOpt = productoMongoRepository.findByIdProducto(idProducto.intValue());
+        if (productoOpt.isPresent()) {
+            ProductoDocument producto = productoOpt.get();
+            // 1. Validar correspondencia de servicio
+            DeclarativeAssertUtil.asegurar(
+                    producto.getIdServicio() != null && producto.getIdServicio().longValue() == idServicio,
+                    () -> new ReglaNegocioException(String.format(
+                            "El producto con ID %d no corresponde al servicio solicitado %d (Servicio en catálogo: %d)",
+                            idProducto, idServicio, producto.getIdServicio())));
+
+            // 2. Validar que el monto no haya sido manipulado si el catálogo define precio fijo
+            if (producto.getPrecio() != null && !producto.getPrecio().isBlank()) {
+                try {
+                    BigDecimal precioCatalogo = new BigDecimal(producto.getPrecio().trim());
+                    if (precioCatalogo.compareTo(BigDecimal.ZERO) > 0) {
+                        DeclarativeAssertUtil.asegurar(
+                                monto.compareTo(precioCatalogo) == 0,
+                                () -> new ReglaNegocioException(String.format(Locale.ROOT,
+                                        "El monto solicitado ($%.2f) no coincide con el precio autorizado en catálogo ($%.2f) para el producto %s",
+                                        monto, precioCatalogo, producto.getProducto())));
+                    }
+                } catch (NumberFormatException ignored) {
+                    log.debug("Precio de producto {} en catálogo es abierto o no numérico: {}", idProducto, producto.getPrecio());
+                }
+            }
+        } else if (productoMongoRepository.count() > 0) {
+            // Si el catálogo está sincronizado y el producto no existe, se rechaza para evitar inyecciones
+            throw new ReglaNegocioException("El producto con ID " + idProducto + " no existe en el catálogo autorizado de servicios");
+        }
     }
 
     private void validarPinSeguro(CuentaEntity cuenta, String pinIngresado) {

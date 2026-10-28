@@ -1,6 +1,7 @@
 package com.proyecto.servicios.controller;
 
 import com.proyecto.servicios.model.common.GenericResponse;
+import com.proyecto.servicios.model.pago.PagoConciliacionRequestDto;
 import com.proyecto.servicios.model.pago.PagoServicioRequestDto;
 import com.proyecto.servicios.model.pago.PagoServicioResponseDto;
 import com.proyecto.servicios.service.PagoServicioService;
@@ -19,7 +20,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Controlador REST para la recepción y procesamiento de pagos de servicios y recargas telefónicas.
+ * Controlador REST para la recepción, procesamiento y conciliación de pagos de servicios y recargas telefónicas.
  * Cumple con los estándares Senior de diseño:
  * - Toda la información viaja exclusivamente en el cuerpo de la petición (JSON) mediante DTOs.
  * - Sin uso de @PathVariable ni @RequestParam.
@@ -28,7 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping(value = {"/pagos", "/api/pagos"})
-@Tag(name = "Pagos de Servicios", description = "Servicio para la recepción y aplicación de pagos de servicios y recargas telefónicas")
+@Tag(name = "Pagos de Servicios", description = "Servicio para la recepción, aplicación y conciliación de pagos de servicios y recargas telefónicas")
 public class PagoServicioController {
 
     private final PagoServicioService pagoServicioService;
@@ -51,12 +52,26 @@ public class PagoServicioController {
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Pago procesado y aplicado exitosamente"),
             @ApiResponse(responseCode = "400", description = "Datos de entrada inválidos, error en UPE, o parámetros condicionales no satisfechos"),
-            @ApiResponse(responseCode = "404", description = "Cuenta bancaria no encontrada")
+            @ApiResponse(responseCode = "404", description = "Cuenta bancaria o producto no encontrado"),
+            @ApiResponse(responseCode = "502", description = "Fallo de comunicación o tiempo de espera con GestoPago")
     })
     public ResponseEntity<GenericResponse<PagoServicioResponseDto>> procesarPago(
             @Valid @RequestBody PagoServicioRequestDto request) {
         PagoServicioResponseDto respuesta = pagoServicioService.procesarPago(request);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(GenericResponse.exito(respuesta, "Pago de servicio recibido y procesado exitosamente"));
+    }
+
+    @PostMapping(value = {"/conciliar", "/consulta"}, consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "Consultar o conciliar estado de una transacción previa",
+               description = "Permite verificar el estado de una transacción financiera mediante su UPE sin arriesgar cargos duplicados ni reintentos ciegos.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Consulta o conciliación procesada exitosamente"),
+            @ApiResponse(responseCode = "400", description = "UPE no registrada o formato inválido")
+    })
+    public ResponseEntity<GenericResponse<PagoServicioResponseDto>> conciliarPago(
+            @Valid @RequestBody PagoConciliacionRequestDto request) {
+        PagoServicioResponseDto respuesta = pagoServicioService.consultarOConciliarPago(request);
+        return ResponseEntity.ok(GenericResponse.exito(respuesta, "Consulta de conciliación procesada exitosamente"));
     }
 }

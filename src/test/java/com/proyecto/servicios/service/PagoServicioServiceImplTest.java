@@ -4,15 +4,18 @@ import com.proyecto.servicios.client.GestoPagoAuthClient;
 import com.proyecto.servicios.client.GestoPagoSendTxClient;
 import com.proyecto.servicios.entity.cliente.CuentaEntity;
 import com.proyecto.servicios.entity.gestopago.GestoPagoToken;
+import com.proyecto.servicios.entity.mongo.ProductoDocument;
 import com.proyecto.servicios.entity.pago.PagoServicioEntity;
 import com.proyecto.servicios.exception.CuentaNoEncontradaException;
 import com.proyecto.servicios.exception.ProveedorPagoException;
 import com.proyecto.servicios.exception.ReglaNegocioException;
 import com.proyecto.servicios.model.gestopago.GestoPagoSendTxRequest;
 import com.proyecto.servicios.model.gestopago.GestoPagoSendTxResponse;
+import com.proyecto.servicios.model.pago.PagoConciliacionRequestDto;
 import com.proyecto.servicios.model.pago.PagoServicioRequestDto;
 import com.proyecto.servicios.model.pago.PagoServicioResponseDto;
 import com.proyecto.servicios.repositorys.cliente.CuentaRepository;
+import com.proyecto.servicios.repositorys.mongo.ProductoMongoRepository;
 import com.proyecto.servicios.repositorys.pago.PagoServicioRepository;
 import com.proyecto.servicios.service.Impl.PagoServicioServiceImpl;
 import com.proyecto.servicios.util.AesEncryptionUtil;
@@ -67,6 +70,9 @@ class PagoServicioServiceImplTest {
     @Mock
     private PasswordEncoder passwordEncoder;
 
+    @Mock
+    private ProductoMongoRepository productoMongoRepository;
+
     @InjectMocks
     private PagoServicioServiceImpl pagoServicioService;
 
@@ -78,6 +84,7 @@ class PagoServicioServiceImplTest {
         ReflectionTestUtils.setField(pagoServicioService, "idDistribuidor", 83);
         ReflectionTestUtils.setField(pagoServicioService, "codigoDispositivo", "GPS83-TPV-17");
         ReflectionTestUtils.setField(pagoServicioService, "passwordDistribuidor", "testpass123");
+        ReflectionTestUtils.setField(pagoServicioService, "productoMongoRepository", productoMongoRepository);
     }
 
     @Test
@@ -188,8 +195,8 @@ class PagoServicioServiceImplTest {
     }
 
     @Test
-    @DisplayName("Paso 4: Si ocurre error de comunicación o Timeout, lanza ProveedorPagoException y sendTx sí fue invocado")
-    void procesarPagoTimeoutNoDescuentaSaldo() {
+    @DisplayName("Paso 4: Si ocurre timeout, se marca EN_CONCILIACION, sendTx fue invocado y no se descuenta saldo")
+    void procesarPagoTimeoutMarcaEnConciliacionYNoDescuentaSaldo() {
         CuentaEntity cuenta = CuentaEntity.builder()
                 .id(1L)
                 .numeroCuenta("1234567890123456")
@@ -224,14 +231,136 @@ class PagoServicioServiceImplTest {
         when(gestoPagoSendTxClient.sendTx(anyString(), any(GestoPagoSendTxRequest.class)))
                 .thenThrow(FeignException.GatewayTimeout.class);
 
-        assertThrows(ProveedorPagoException.class, () -> pagoServicioService.procesarPago(request));
+        ProveedorPagoException ex = assertThrows(ProveedorPagoException.class, () -> pagoServicioService.procesarPago(request));
+        assertTrue(ex.getMessage().contains("EN_CONCILIACION"));
 
-        // Verificación de que sendTx fue efectivamente llamado
+        // Verificación de que sendTx fue llamado
         verify(gestoPagoSendTxClient, times(1)).sendTx(anyString(), any(GestoPagoSendTxRequest.class));
 
         // Saldo permanece intacto
         assertEquals(new BigDecimal("500.00"), cuenta.getSaldo());
         verify(cuentaRepository, never()).save(cuenta);
+    }
+
+    @Test
+    @DisplayName("Catálogo: Validación rechaza producto que no coincide con el servicio")
+    void validarProductoEnCatalogoServicioIncorrectoLanzaExcepcion() {
+        ProductoDocument prod = ProductoDocument.builder()
+                .idProducto(101)
+                .idServicio(99) // Diferente al servicio 1 de la petición
+                .producto("PAQUETE INTERNET 100")
+                .precio("150.00")
+                .build();
+
+        PagoServicioRequestDto request = PagoServicioRequestDto.builder()
+                .numCuenta("1234567890123456")
+                .idServicio(1L)
+                .idProducto(101L)
+                .monto(new BigDecimal("150.00"))
+                .upe("1234567890")
+                .bandera(true)
+                .telefono("5512345678")
+                .pin("1234")
+                .build();
+
+        when(pagoServicioRepository.findByUpe("1234567890")).thenReturn(Optional.empty());
+        when(productoMongoRepository.findByIdProducto(101)).thenReturn(Optional.of(prod));
+
+        ReglaNegocioException ex = assertThrows(ReglaNegocioException.class, () -> pagoServicioService.procesarPago(request));
+        assertTrue(ex.getMessage().contains("no corresponde al servicio"));
+
+        verify(gestoPagoSendTxClient, never()).sendTx(anyString(), any());
+    }
+
+    @Test
+    @DisplayName("Catálogo: Validación rechaza monto manipulado distinto al precio fijo en catálogo")
+    void validarProductoEnCatalogoPrecioManipuladoLanzaExcepcion() {
+        ProductoDocument prod = ProductoDocument.builder()
+                .idProducto(101)
+                .idServicio(1)
+                .producto("PAQUETE FIJO")
+                .precio("200.00") // Precio fijo en catálogo $200.00
+                .build();
+
+        PagoServicioRequestDto request = PagoServicioRequestDto.builder()
+                .numCuenta("1234567890123456")
+                .idServicio(1L)
+                .idProducto(101L)
+                .monto(new BigDecimal("150.00")) // Cliente envía $150.00 (manipulado)
+                .upe("1234567890")
+                .bandera(true)
+                .telefono("5512345678")
+                .pin("1234")
+                .build();
+
+        when(pagoServicioRepository.findByUpe("1234567890")).thenReturn(Optional.empty());
+        when(productoMongoRepository.findByIdProducto(101)).thenReturn(Optional.of(prod));
+
+        ReglaNegocioException ex = assertThrows(ReglaNegocioException.class, () -> pagoServicioService.procesarPago(request));
+        assertTrue(ex.getMessage().contains("no coincide con el precio autorizado en catálogo"));
+
+        verify(gestoPagoSendTxClient, never()).sendTx(anyString(), any());
+    }
+
+    @Test
+    @DisplayName("Conciliación: Transacción en estado EN_CONCILIACION impide reenvío ciego a GestoPago")
+    void transaccionEnConciliacionImpideReenvioCiego() {
+        PagoServicioEntity transaccionConcilia = PagoServicioEntity.builder()
+                .folioTransaccion("GP-TX-TIMEOUT-001")
+                .numCuenta("1234567890123456")
+                .idServicio(1L)
+                .idProducto(101L)
+                .monto(new BigDecimal("100.00"))
+                .upe("1234567890")
+                .esRecargaTelefonica(true)
+                .telefono("5512345678")
+                .estatus("EN_CONCILIACION")
+                .fechaOperacion(LocalDateTime.now())
+                .build();
+
+        PagoServicioRequestDto request = PagoServicioRequestDto.builder()
+                .numCuenta("1234567890123456")
+                .idServicio(1L)
+                .idProducto(101L)
+                .monto(new BigDecimal("100.00"))
+                .upe("1234567890")
+                .bandera(true)
+                .telefono("5512345678")
+                .pin("1234")
+                .build();
+
+        when(pagoServicioRepository.findByUpe("1234567890")).thenReturn(Optional.of(transaccionConcilia));
+
+        ReglaNegocioException ex = assertThrows(ReglaNegocioException.class, () -> pagoServicioService.procesarPago(request));
+        assertTrue(ex.getMessage().contains("EN_CONCILIACION"));
+
+        verify(gestoPagoSendTxClient, never()).sendTx(anyString(), any());
+    }
+
+    @Test
+    @DisplayName("Conciliación: Endpoint de consulta retorna estado actual de la transacción")
+    void consultarOConciliarPagoRetornaEstado() {
+        PagoServicioEntity transaccion = PagoServicioEntity.builder()
+                .folioTransaccion("GP-TX-APLICADA-001")
+                .numCuenta("1234567890123456")
+                .idServicio(1L)
+                .idProducto(101L)
+                .monto(new BigDecimal("100.00"))
+                .upe("1234567890")
+                .esRecargaTelefonica(true)
+                .telefono("5512345678")
+                .estatus("APLICADO")
+                .fechaOperacion(LocalDateTime.now())
+                .build();
+
+        when(pagoServicioRepository.findByUpe("1234567890")).thenReturn(Optional.of(transaccion));
+
+        PagoServicioResponseDto response = pagoServicioService.consultarOConciliarPago(
+                PagoConciliacionRequestDto.builder().upe("1234567890").build());
+
+        assertNotNull(response);
+        assertEquals("GP-TX-APLICADA-001", response.getFolioTransaccion());
+        assertEquals("APLICADO", response.getEstatus());
     }
 
     @Test
@@ -242,7 +371,7 @@ class PagoServicioServiceImplTest {
                 .numeroCuenta("1234567890123456")
                 .saldo(new BigDecimal("500.00"))
                 .estatus("ACTIVA")
-                .pinHash(null) // PIN no configurado
+                .pinHash(null)
                 .build();
 
         PagoServicioRequestDto request = PagoServicioRequestDto.builder()
