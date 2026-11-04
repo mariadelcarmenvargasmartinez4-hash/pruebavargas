@@ -106,7 +106,10 @@ springBoot {
 
 sonarqube {
     properties {
-        property "sonar.exclusions", "**/App.java,**/model/**,**/entity/**,**/enums/**,**/config/**,**/controller/**,**/service/configuracion/**"
+        property "sonar.sources", "src/main/java/com/proyecto/servicios/service"
+        property "sonar.tests", "src/test/java/com/proyecto/servicios/service"
+        property "sonar.inclusions", "**/service/**"
+        property "sonar.test.inclusions", "**/service/**"
     }
 }
 jacocoTestReport {
