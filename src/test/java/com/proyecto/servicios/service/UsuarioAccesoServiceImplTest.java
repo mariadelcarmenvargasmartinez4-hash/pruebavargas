@@ -8,6 +8,8 @@ import com.proyecto.servicios.exception.ReglaNegocioException;
 import com.proyecto.servicios.exception.UsuarioNoEncontradoException;
 import com.proyecto.servicios.exception.UsuarioYaExisteException;
 import com.proyecto.servicios.model.cliente.UsuarioAccesoDto;
+import com.proyecto.servicios.model.cliente.UsuarioConsultaFiltroRecord;
+import com.proyecto.servicios.exception.CorreoDuplicadoException;
 import com.proyecto.servicios.model.cliente.UsuarioAgregarRequestDto;
 import com.proyecto.servicios.model.common.PaginaResponseRecord;
 import com.proyecto.servicios.model.usuario.UsuarioActualizacionRequestDto;
@@ -378,5 +380,107 @@ class UsuarioAccesoServiceImplTest {
         assertEquals(true, response.getActivo());
         verify(passwordEncoder).encode(TestCredentials.validPass());
         verify(usuarioRepository).save(any(UsuarioAccesoEntity.class));
+    }
+
+    @Test
+    @DisplayName("buscarUsuariosPaginados - Retorna lista paginada")
+    void buscarUsuariosPaginadosRetornaPagina() {
+        UsuarioAccesoEntity usuario = UsuarioAccesoEntity.builder()
+                .id(1L)
+                .username("juan@example.com")
+                .activo(true)
+                .build();
+        org.springframework.data.domain.Page<UsuarioAccesoEntity> page = new org.springframework.data.domain.PageImpl<>(List.of(usuario));
+        org.mockito.ArgumentCaptor<Specification<UsuarioAccesoEntity>> captor = org.mockito.ArgumentCaptor.forClass(Specification.class);
+        when(usuarioRepository.findAll(captor.capture(), any(Pageable.class))).thenReturn(page);
+
+        UsuarioConsultaFiltroRecord filtro = new UsuarioConsultaFiltroRecord("juan", true, 0, 10, "id", "ASC", null);
+        PaginaResponseRecord<UsuarioAccesoDto> resultado = usuarioService.buscarUsuariosPaginados(filtro);
+
+        assertEquals(1, resultado.contenido().size());
+        assertEquals("juan@example.com", resultado.contenido().get(0).getUsername());
+
+        Specification<UsuarioAccesoEntity> spec = captor.getValue();
+        jakarta.persistence.criteria.Root<UsuarioAccesoEntity> root = org.mockito.Mockito.mock(jakarta.persistence.criteria.Root.class, org.mockito.Mockito.RETURNS_DEEP_STUBS);
+        jakarta.persistence.criteria.CriteriaQuery<?> query = org.mockito.Mockito.mock(jakarta.persistence.criteria.CriteriaQuery.class);
+        jakarta.persistence.criteria.CriteriaBuilder cb = org.mockito.Mockito.mock(jakarta.persistence.criteria.CriteriaBuilder.class, org.mockito.Mockito.RETURNS_DEEP_STUBS);
+
+        spec.toPredicate(root, query, cb);
+    }
+
+    @Test
+    @DisplayName("filtrarUsuarios - Retorna lista de DTOs")
+    void filtrarUsuariosRetornaLista() {
+        UsuarioAccesoEntity usuario = UsuarioAccesoEntity.builder()
+                .id(2L)
+                .username("filtro@example.com")
+                .activo(true)
+                .build();
+        org.springframework.data.domain.Page<UsuarioAccesoEntity> page = new org.springframework.data.domain.PageImpl<>(List.of(usuario));
+        when(usuarioRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
+
+        List<UsuarioAccesoDto> resultado = usuarioService.filtrarUsuarios("filtro", true);
+
+        assertEquals(1, resultado.size());
+        assertEquals("filtro@example.com", resultado.get(0).getUsername());
+    }
+
+    @Test
+    @DisplayName("agregarUsuario - Lanza ClienteNoEncontradoException")
+    void agregarUsuarioLanzaClienteNoEncontrado() {
+        UsuarioAgregarRequestDto request = new UsuarioAgregarRequestDto(999L, TestCredentials.validPass());
+        when(clienteRepository.findById(999L)).thenReturn(Optional.empty());
+
+        assertThrows(ClienteNoEncontradoException.class, () -> usuarioService.agregarUsuario(request));
+    }
+
+    @Test
+    @DisplayName("agregarUsuario - Lanza ReglaNegocioException si cliente está inactivo")
+    void agregarUsuarioLanzaExcepcionClienteInactivo() {
+        ClienteEntity clienteInactivo = ClienteEntity.builder().id(5L).activo(false).build();
+        UsuarioAgregarRequestDto request = new UsuarioAgregarRequestDto(5L, TestCredentials.validPass());
+        when(clienteRepository.findById(5L)).thenReturn(Optional.of(clienteInactivo));
+
+        assertThrows(ReglaNegocioException.class, () -> usuarioService.agregarUsuario(request));
+    }
+
+    @Test
+    @DisplayName("agregarUsuario - Lanza CorreoDuplicadoException si ya tiene usuario")
+    void agregarUsuarioLanzaCorreoDuplicado() {
+        ClienteEntity cliente = ClienteEntity.builder()
+                .id(8L)
+                .correoElectronico("existente@example.com")
+                .activo(true)
+                .build();
+        UsuarioAgregarRequestDto request = new UsuarioAgregarRequestDto(8L, TestCredentials.validPass());
+        when(clienteRepository.findById(8L)).thenReturn(Optional.of(cliente));
+        when(usuarioRepository.existsByClienteId(8L)).thenReturn(true);
+
+        assertThrows(CorreoDuplicadoException.class, () -> usuarioService.agregarUsuario(request));
+    }
+
+    @Test
+    @DisplayName("reactivarUsuario - Lanza ReglaNegocioException si ya está activo")
+    void reactivarUsuarioYaActivoLanzaExcepcionNegocio() {
+        UsuarioEstadoRequestDto request = new UsuarioEstadoRequestDto();
+        request.setId(11L);
+        UsuarioAccesoEntity usuario = UsuarioAccesoEntity.builder().id(11L).activo(true).build();
+        when(usuarioRepository.findById(11L)).thenReturn(Optional.of(usuario));
+
+        assertThrows(ReglaNegocioException.class, () -> usuarioService.reactivarUsuario(request));
+    }
+
+    @Test
+    @DisplayName("actualizarUsuario - Lanza UsuarioYaExisteException si nuevo username ya existe")
+    void actualizarUsuarioUsernameDuplicado() {
+        UsuarioActualizacionRequestDto request = new UsuarioActualizacionRequestDto();
+        request.setId(30L);
+        request.setUsername("duplicado@example.com");
+
+        UsuarioAccesoEntity usuario = UsuarioAccesoEntity.builder().id(30L).username("original@example.com").build();
+        when(usuarioRepository.findById(30L)).thenReturn(Optional.of(usuario));
+        when(usuarioRepository.existsByUsername("duplicado@example.com")).thenReturn(true);
+
+        assertThrows(UsuarioYaExisteException.class, () -> usuarioService.actualizarUsuario(request));
     }
 }

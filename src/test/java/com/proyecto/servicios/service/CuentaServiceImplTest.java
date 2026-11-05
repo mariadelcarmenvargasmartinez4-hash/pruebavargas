@@ -2,9 +2,12 @@ package com.proyecto.servicios.service;
 
 import com.proyecto.servicios.entity.cliente.ClienteEntity;
 import com.proyecto.servicios.entity.cliente.CuentaEntity;
+import com.proyecto.servicios.exception.CuentaNoEncontradaException;
 import com.proyecto.servicios.exception.ReglaNegocioException;
 import com.proyecto.servicios.model.cliente.CuentaBancariaDto;
+import com.proyecto.servicios.model.common.PaginaResponseRecord;
 import com.proyecto.servicios.model.cuenta.CuentaActualizacionRequestDto;
+import com.proyecto.servicios.model.cuenta.CuentaConsultaFiltroRecord;
 import com.proyecto.servicios.model.cuenta.CuentaCreacionRequestDto;
 import com.proyecto.servicios.model.cuenta.SaldoCuentaDto;
 import com.proyecto.servicios.repositorys.cliente.ClienteRepository;
@@ -20,8 +23,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -33,8 +41,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Pruebas unitarias para CuentaServiceImpl.
- * Utiliza Test Data Builders para eliminar redundancias y mantener independencia de base de datos con Mocks.
+ * Pruebas unitarias completas para CuentaServiceImpl.
  */
 @ExtendWith(MockitoExtension.class)
 class CuentaServiceImplTest {
@@ -97,6 +104,45 @@ class CuentaServiceImplTest {
     }
 
     @Test
+    @DisplayName("Obtener cuenta por número exitoso")
+    void testObtenerCuentaPorNumero_Exitoso() {
+        when(cuentaRepository.findByNumeroCuenta("4815162342")).thenReturn(Optional.of(cuentaMock));
+
+        CuentaBancariaDto dto = cuentaService.obtenerCuentaPorNumero("4815162342");
+        assertNotNull(dto);
+        assertEquals("4815162342", dto.getNumeroCuenta());
+    }
+
+    @Test
+    @DisplayName("Obtener cuenta por número inexistente lanza CuentaNoEncontradaException")
+    void testObtenerCuentaPorNumero_NoExiste() {
+        when(cuentaRepository.findByNumeroCuenta("9999999999")).thenReturn(Optional.empty());
+
+        assertThrows(CuentaNoEncontradaException.class, () -> cuentaService.obtenerCuentaPorNumero("9999999999"));
+    }
+
+    @Test
+    @DisplayName("Buscar cuentas paginadas con filtros")
+    void testBuscarCuentasPaginadas() {
+        CuentaConsultaFiltroRecord filtro = new CuentaConsultaFiltroRecord("4815162342", 1L, "ACTIVA", true, 0, 10, "id", "ASC", 0);
+        Page<CuentaEntity> page = new PageImpl<>(List.of(cuentaMock));
+
+        org.mockito.ArgumentCaptor<Specification<CuentaEntity>> captor = org.mockito.ArgumentCaptor.forClass(Specification.class);
+        when(cuentaRepository.findAll(captor.capture(), any(Pageable.class))).thenReturn(page);
+
+        PaginaResponseRecord<CuentaBancariaDto> res = cuentaService.buscarCuentasPaginadas(filtro);
+        assertNotNull(res);
+        assertEquals(1, res.totalElementos());
+
+        Specification<CuentaEntity> spec = captor.getValue();
+        jakarta.persistence.criteria.Root<CuentaEntity> root = org.mockito.Mockito.mock(jakarta.persistence.criteria.Root.class, org.mockito.Mockito.RETURNS_DEEP_STUBS);
+        jakarta.persistence.criteria.CriteriaQuery<?> query = org.mockito.Mockito.mock(jakarta.persistence.criteria.CriteriaQuery.class);
+        jakarta.persistence.criteria.CriteriaBuilder cb = org.mockito.Mockito.mock(jakarta.persistence.criteria.CriteriaBuilder.class, org.mockito.Mockito.RETURNS_DEEP_STUBS);
+
+        spec.toPredicate(root, query, cb);
+    }
+
+    @Test
     @DisplayName("Consultar saldo de cuenta existente")
     void testObtenerSaldoCuenta() {
         when(cuentaRepository.findByNumeroCuenta("4815162342")).thenReturn(Optional.of(cuentaMock));
@@ -115,6 +161,7 @@ class CuentaServiceImplTest {
         CuentaActualizacionRequestDto actualizacion = CuentaActualizacionRequestDto.builder()
                 .saldo(new BigDecimal("3500.00"))
                 .tipoCuenta("NOMINA")
+                .estatus("ACTIVA")
                 .build();
 
         when(cuentaRepository.findByNumeroCuenta("4815162342")).thenReturn(Optional.of(cuentaMock));
@@ -124,5 +171,77 @@ class CuentaServiceImplTest {
 
         assertNotNull(resultado);
         verify(cuentaRepository).save(any(CuentaEntity.class));
+    }
+
+    @Test
+    @DisplayName("Actualizar cuenta de cliente inactivo lanza excepcion")
+    void testActualizarCuenta_ClienteInactivo_LanzaExcepcion() {
+        cuentaMock.setCliente(clienteInactivo);
+        when(cuentaRepository.findByNumeroCuenta("4815162342")).thenReturn(Optional.of(cuentaMock));
+
+        CuentaActualizacionRequestDto actualizacion = CuentaActualizacionRequestDto.builder().saldo(new BigDecimal("100.00")).build();
+        assertThrows(ReglaNegocioException.class, () -> cuentaService.actualizarCuenta("4815162342", actualizacion));
+    }
+
+    @Test
+    @DisplayName("Actualizar cuenta cancelada lanza excepcion")
+    void testActualizarCuenta_Cancelada_LanzaExcepcion() {
+        cuentaMock.setEstatus("CANCELADA");
+        when(cuentaRepository.findByNumeroCuenta("4815162342")).thenReturn(Optional.of(cuentaMock));
+
+        CuentaActualizacionRequestDto actualizacion = CuentaActualizacionRequestDto.builder().saldo(new BigDecimal("100.00")).build();
+        assertThrows(ReglaNegocioException.class, () -> cuentaService.actualizarCuenta("4815162342", actualizacion));
+    }
+
+    @Test
+    @DisplayName("Desactivar cuenta exitosamente")
+    void testDesactivarCuenta_Exitoso() {
+        when(cuentaRepository.findByNumeroCuenta("4815162342")).thenReturn(Optional.of(cuentaMock));
+
+        cuentaService.desactivarCuenta("4815162342");
+
+        assertEquals("CANCELADA", cuentaMock.getEstatus());
+        verify(cuentaRepository).save(cuentaMock);
+    }
+
+    @Test
+    @DisplayName("Desactivar cuenta ya cancelada lanza excepcion")
+    void testDesactivarCuenta_YaCancelada_LanzaExcepcion() {
+        cuentaMock.setEstatus("CANCELADA");
+        when(cuentaRepository.findByNumeroCuenta("4815162342")).thenReturn(Optional.of(cuentaMock));
+
+        assertThrows(ReglaNegocioException.class, () -> cuentaService.desactivarCuenta("4815162342"));
+    }
+
+    @Test
+    @DisplayName("Reactivar cuenta exitosamente")
+    void testReactivarCuenta_Exitoso() {
+        cuentaMock.setEstatus("CANCELADA");
+        when(cuentaRepository.findByNumeroCuenta("4815162342")).thenReturn(Optional.of(cuentaMock));
+        when(cuentaRepository.save(any(CuentaEntity.class))).thenAnswer(i -> i.getArgument(0));
+
+        CuentaBancariaDto dto = cuentaService.reactivarCuenta("4815162342");
+
+        assertNotNull(dto);
+        assertEquals("ACTIVA", cuentaMock.getEstatus());
+    }
+
+    @Test
+    @DisplayName("Reactivar cuenta de cliente inactivo lanza excepcion")
+    void testReactivarCuenta_ClienteInactivo_LanzaExcepcion() {
+        cuentaMock.setCliente(clienteInactivo);
+        cuentaMock.setEstatus("CANCELADA");
+        when(cuentaRepository.findByNumeroCuenta("4815162342")).thenReturn(Optional.of(cuentaMock));
+
+        assertThrows(ReglaNegocioException.class, () -> cuentaService.reactivarCuenta("4815162342"));
+    }
+
+    @Test
+    @DisplayName("Reactivar cuenta ya activa lanza excepcion")
+    void testReactivarCuenta_YaActiva_LanzaExcepcion() {
+        cuentaMock.setEstatus("ACTIVA");
+        when(cuentaRepository.findByNumeroCuenta("4815162342")).thenReturn(Optional.of(cuentaMock));
+
+        assertThrows(ReglaNegocioException.class, () -> cuentaService.reactivarCuenta("4815162342"));
     }
 }

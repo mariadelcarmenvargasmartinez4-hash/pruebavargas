@@ -397,4 +397,100 @@ class PagoServicioServiceImplTest {
         assertThrows(EntidadNoProcesableException.class, () -> pagoServicioService.procesarPago(request));
         verify(gestoPagoSendTxClient, never()).sendTx(anyString(), any());
     }
+
+    @Test
+    @DisplayName("procesarPago: Request nulo lanza ReglaNegocioException")
+    void procesarPagoRequestNuloLanzaExcepcion() {
+        assertThrows(ReglaNegocioException.class, () -> pagoServicioService.procesarPago(null));
+    }
+
+    @Test
+    @DisplayName("procesarPago: UPE duplicado en estado EN_CONCILIACION lanza ReglaNegocioException")
+    void procesarPagoUpeEnConciliacionLanzaExcepcion() {
+        PagoServicioRequestDto request = PagoTestDataBuilder.requestValido();
+        PagoServicioEntity transaccionExistente = PagoServicioEntity.builder()
+                .upe(request.getUpe())
+                .estatus("EN_CONCILIACION")
+                .folioTransaccion("FOLIO-CONC-123")
+                .build();
+
+        when(pagoServicioRepository.findByUpe(request.getUpe())).thenReturn(Optional.of(transaccionExistente));
+
+        assertThrows(ReglaNegocioException.class, () -> pagoServicioService.procesarPago(request));
+    }
+
+    @Test
+    @DisplayName("consultarOConciliarPago: Request nulo o UPE inválida lanza ReglaNegocioException")
+    void consultarOConciliarPagoValidacionesUpe() {
+        assertThrows(ReglaNegocioException.class, () -> pagoServicioService.consultarOConciliarPago(null));
+
+        PagoConciliacionRequestDto dtoInvalido = new PagoConciliacionRequestDto();
+        dtoInvalido.setUpe("123");
+        assertThrows(ReglaNegocioException.class, () -> pagoServicioService.consultarOConciliarPago(dtoInvalido));
+    }
+
+    @Test
+    @DisplayName("consultarOConciliarPago: UPE no encontrada lanza EntidadNoProcesableException")
+    void consultarOConciliarPagoUpeNoEncontrada() {
+        PagoConciliacionRequestDto dto = new PagoConciliacionRequestDto();
+        dto.setUpe("1234567890");
+
+        when(pagoServicioRepository.findByUpe("1234567890")).thenReturn(Optional.empty());
+
+        assertThrows(EntidadNoProcesableException.class, () -> pagoServicioService.consultarOConciliarPago(dto));
+    }
+
+    @Test
+    @DisplayName("consultarOConciliarPago: Transacción en estado APLICADO retorna respuesta idempotente")
+    void consultarOConciliarPagoAplicadoRetornaIdempotente() {
+        PagoConciliacionRequestDto dto = new PagoConciliacionRequestDto();
+        dto.setUpe("1234567890");
+
+        PagoServicioEntity transaccion = PagoServicioEntity.builder()
+                .upe("1234567890")
+                .estatus("APLICADO")
+                .folioTransaccion("FOL-998877")
+                .numCuenta("4815162342")
+                .monto(new BigDecimal("150.00"))
+                .esRecargaTelefonica(true)
+                .telefono("5512345678")
+                .fechaOperacion(LocalDateTime.now())
+                .build();
+
+        when(pagoServicioRepository.findByUpe("1234567890")).thenReturn(Optional.of(transaccion));
+
+        PagoServicioResponseDto res = pagoServicioService.consultarOConciliarPago(dto);
+
+        assertNotNull(res);
+        assertEquals("FOL-998877", res.getFolioTransaccion());
+        assertEquals("APLICADO", res.getEstatus());
+        assertEquals("RECARGA_TELEFONICA", res.getTipoOperacion());
+    }
+
+    @Test
+    @DisplayName("consultarOConciliarPago: Transacción en estado EN_CONCILIACION retorna estado actual")
+    void consultarOConciliarPagoEnConciliacionRetornaEstado() {
+        PagoConciliacionRequestDto dto = new PagoConciliacionRequestDto();
+        dto.setUpe("1234567890");
+
+        PagoServicioEntity transaccion = PagoServicioEntity.builder()
+                .upe("1234567890")
+                .estatus("EN_CONCILIACION")
+                .folioTransaccion("FOL-PENDIENTE-1")
+                .numCuenta("4815162342")
+                .monto(new BigDecimal("200.00"))
+                .esRecargaTelefonica(false)
+                .referencia("REF-PAGO-AGUA")
+                .fechaOperacion(LocalDateTime.now())
+                .build();
+
+        when(pagoServicioRepository.findByUpe("1234567890")).thenReturn(Optional.of(transaccion));
+
+        PagoServicioResponseDto res = pagoServicioService.consultarOConciliarPago(dto);
+
+        assertNotNull(res);
+        assertEquals("EN_CONCILIACION", res.getEstatus());
+        assertEquals("PAGO_SERVICIO_REFERENCIA", res.getTipoOperacion());
+        assertEquals("REF-PAGO-AGUA", res.getDestinoPago());
+    }
 }

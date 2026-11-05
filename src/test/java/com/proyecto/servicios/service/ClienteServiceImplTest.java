@@ -5,11 +5,15 @@ import com.proyecto.servicios.entity.cliente.CuentaEntity;
 import com.proyecto.servicios.entity.cliente.DomicilioEntity;
 import com.proyecto.servicios.entity.cliente.UsuarioAccesoEntity;
 import com.proyecto.servicios.exception.ClienteNoEncontradoException;
+import com.proyecto.servicios.exception.ClienteYaRegistradoException;
 import com.proyecto.servicios.exception.CurpDuplicadaException;
 import com.proyecto.servicios.exception.ReglaNegocioException;
 import com.proyecto.servicios.exception.RfcDuplicadoException;
+import com.proyecto.servicios.model.cliente.ClienteActualizacionRequestDto;
+import com.proyecto.servicios.model.cliente.ClienteConsultaFiltroRecord;
 import com.proyecto.servicios.model.cliente.ClienteRegistroRequestDto;
 import com.proyecto.servicios.model.cliente.ClienteRegistroResponseDto;
+import com.proyecto.servicios.model.common.PaginaResponseRecord;
 import com.proyecto.servicios.model.util.MetricasTextoDto;
 import com.proyecto.servicios.repositorys.cliente.ClienteRepository;
 import com.proyecto.servicios.repositorys.cliente.CuentaRepository;
@@ -28,9 +32,15 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -38,14 +48,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Pruebas unitarias para ClienteServiceImpl.
- * Utiliza Test Data Builders para eliminar código quemado y mantener aislamiento total con Mocks.
+ * Pruebas unitarias completas para ClienteServiceImpl.
  */
 @ExtendWith(MockitoExtension.class)
 class ClienteServiceImplTest {
@@ -179,6 +189,25 @@ class ClienteServiceImplTest {
     }
 
     @Test
+    @DisplayName("Registrar cliente con nacionalidad inválida lanza ReglaNegocioException")
+    void testRegistrarCliente_NacionalidadInvalida_LanzaExcepcion() {
+        when(sexoService.esValidoYActivo(anyString())).thenReturn(true);
+        when(nacionalidadService.esValidoYActivo(anyString())).thenReturn(false);
+
+        assertThrows(ReglaNegocioException.class, () -> clienteService.registrarCliente(requestValido));
+    }
+
+    @Test
+    @DisplayName("Registrar cliente con estado civil inválido lanza ReglaNegocioException")
+    void testRegistrarCliente_EstadoCivilInvalido_LanzaExcepcion() {
+        when(sexoService.esValidoYActivo(anyString())).thenReturn(true);
+        when(nacionalidadService.esValidoYActivo(anyString())).thenReturn(true);
+        when(estadoCivilService.esValidoYActivo(anyString())).thenReturn(false);
+
+        assertThrows(ReglaNegocioException.class, () -> clienteService.registrarCliente(requestValido));
+    }
+
+    @Test
     @DisplayName("Registrar cliente con CURP duplicado lanza CurpDuplicadaException")
     void testRegistrarCliente_CurpDuplicada_LanzaExcepcion() {
         when(sexoService.esValidoYActivo(anyString())).thenReturn(true);
@@ -202,17 +231,113 @@ class ClienteServiceImplTest {
     }
 
     @Test
+    @DisplayName("Registrar cliente con correo duplicado lanza ClienteYaRegistradoException")
+    void testRegistrarCliente_CorreoDuplicado_LanzaExcepcion() {
+        when(sexoService.esValidoYActivo(anyString())).thenReturn(true);
+        when(nacionalidadService.esValidoYActivo(anyString())).thenReturn(true);
+        when(estadoCivilService.esValidoYActivo(anyString())).thenReturn(true);
+        when(clienteRepository.existsByCurp(anyString())).thenReturn(false);
+        when(clienteRepository.existsByRfc(anyString())).thenReturn(false);
+        when(clienteRepository.existsByCorreoElectronico(anyString())).thenReturn(true);
+
+        assertThrows(ClienteYaRegistradoException.class, () -> clienteService.registrarCliente(requestValido));
+    }
+
+    @Test
+    @DisplayName("Buscar clientes paginados con filtros")
+    void testBuscarClientesPaginados() {
+        ClienteConsultaFiltroRecord filtro = new ClienteConsultaFiltroRecord("Juan", "Perez", "Lopez", "PELJ900515HDFRPR09", "PELJ9005151A2", "juan.perez@example.com", "4815162342", true, LocalDateTime.now().minusDays(1), LocalDateTime.now(), 0, 10, "id", "ASC", 0);
+        Page<ClienteEntity> page = new PageImpl<>(List.of(clienteMock));
+
+        when(clienteRepository.findAll(any(Specification.class), any(Pageable.class))).thenReturn(page);
+        when(domicilioRepository.findByClienteId(1L)).thenReturn(Optional.of(domicilioMock));
+        when(cuentaRepository.findByClienteId(1L)).thenReturn(List.of(cuentaMock));
+        when(usuarioAccesoRepository.findByClienteId(1L)).thenReturn(Optional.of(usuarioMock));
+
+        PaginaResponseRecord<ClienteRegistroResponseDto> res = clienteService.buscarClientesPaginados(filtro);
+        assertNotNull(res);
+        assertEquals(1, res.totalElementos());
+    }
+
+    @Test
+    @DisplayName("Consultar cliente por ID exitoso")
+    void testObtenerClientePorId_Exitoso() {
+        when(clienteRepository.findById(1L)).thenReturn(Optional.of(clienteMock));
+        when(domicilioRepository.findByClienteId(1L)).thenReturn(Optional.of(domicilioMock));
+        when(cuentaRepository.findByClienteId(1L)).thenReturn(List.of(cuentaMock));
+        when(usuarioAccesoRepository.findByClienteId(1L)).thenReturn(Optional.of(usuarioMock));
+
+        ClienteRegistroResponseDto respuesta = clienteService.obtenerClientePorId(1L);
+
+        assertNotNull(respuesta);
+        assertEquals(1L, respuesta.getIdCliente());
+    }
+
+    @Test
     @DisplayName("Consultar cliente por CURP exitoso")
     void testObtenerClientePorCurp_Exitoso() {
         when(clienteRepository.findByCurp(clienteMock.getCurp())).thenReturn(Optional.of(clienteMock));
         when(domicilioRepository.findByClienteId(1L)).thenReturn(Optional.of(domicilioMock));
         when(cuentaRepository.findByClienteId(1L)).thenReturn(List.of(cuentaMock));
+        when(usuarioAccesoRepository.findByClienteId(1L)).thenReturn(Optional.of(usuarioMock));
 
         ClienteRegistroResponseDto respuesta = clienteService.obtenerClientePorCurp(clienteMock.getCurp());
 
         assertNotNull(respuesta);
         assertEquals(clienteMock.getCurp(), respuesta.getCurp());
         assertEquals("Juan Carlos Perez Lopez", respuesta.getNombreCompleto());
+    }
+
+    @Test
+    @DisplayName("Actualizar cliente exitoso")
+    void testActualizarCliente_Exitoso() {
+        ClienteActualizacionRequestDto actualizacion = ClienteActualizacionRequestDto.builder()
+                .nombre("Juan")
+                .segundoNombre("Alberto")
+                .apellidoPaterno("Perez")
+                .apellidoMaterno("Lopez")
+                .sexo("MASCULINO")
+                .nacionalidad("MEXICANA")
+                .estadoCivil("CASADO")
+                .correoElectronico("nuevo.correo@example.com")
+                .telefonoMovil("5599887766")
+                .ocupacion("Consultor")
+                .empresa("Fintech SA")
+                .ingresoMensual(new BigDecimal("50000.00"))
+                .calle("Av. Palmas")
+                .numeroExterior("100")
+                .colonia("Lomas")
+                .municipio("Miguel Hidalgo")
+                .estado("CDMX")
+                .codigoPostal("11000")
+                .pais("Mexico")
+                .build();
+
+        when(clienteRepository.findById(1L)).thenReturn(Optional.of(clienteMock));
+        when(sexoService.esValidoYActivo("MASCULINO")).thenReturn(true);
+        when(nacionalidadService.esValidoYActivo("MEXICANA")).thenReturn(true);
+        when(estadoCivilService.esValidoYActivo("CASADO")).thenReturn(true);
+        when(clienteRepository.existsByCorreoElectronico("nuevo.correo@example.com")).thenReturn(false);
+        when(clienteRepository.save(any(ClienteEntity.class))).thenAnswer(i -> i.getArgument(0));
+
+        when(domicilioRepository.findByClienteId(1L)).thenReturn(Optional.of(domicilioMock));
+        when(cuentaRepository.findByClienteId(1L)).thenReturn(List.of(cuentaMock));
+        when(usuarioAccesoRepository.findByClienteId(1L)).thenReturn(Optional.of(usuarioMock));
+
+        ClienteRegistroResponseDto res = clienteService.actualizarCliente(1L, actualizacion);
+
+        assertNotNull(res);
+        verify(clienteRepository).save(clienteMock);
+    }
+
+    @Test
+    @DisplayName("Actualizar cliente inactivo lanza excepcion")
+    void testActualizarCliente_Inactivo_LanzaExcepcion() {
+        clienteMock.setActivo(false);
+        when(clienteRepository.findById(1L)).thenReturn(Optional.of(clienteMock));
+
+        ClienteActualizacionRequestDto act = ClienteActualizacionRequestDto.builder().nombre("Carlos").build();
+        assertThrows(ReglaNegocioException.class, () -> clienteService.actualizarCliente(1L, act));
     }
 
     @Test
@@ -234,6 +359,15 @@ class ClienteServiceImplTest {
     }
 
     @Test
+    @DisplayName("Desactivar cliente ya inactivo lanza excepcion")
+    void testDesactivarCliente_YaInactivo_LanzaExcepcion() {
+        clienteMock.setActivo(false);
+        when(clienteRepository.findById(1L)).thenReturn(Optional.of(clienteMock));
+
+        assertThrows(ReglaNegocioException.class, () -> clienteService.desactivarCliente(1L));
+    }
+
+    @Test
     @DisplayName("Reactivar cliente exitoso reactiva entidad y usuario")
     void testReactivarCliente_Exitoso() {
         clienteMock.setActivo(false);
@@ -250,6 +384,15 @@ class ClienteServiceImplTest {
         assertEquals(true, usuarioMock.getActivo());
         verify(clienteRepository).save(clienteMock);
         verify(usuarioAccesoRepository).save(usuarioMock);
+    }
+
+    @Test
+    @DisplayName("Reactivar cliente ya activo lanza excepcion")
+    void testReactivarCliente_YaActivo_LanzaExcepcion() {
+        clienteMock.setActivo(true);
+        when(clienteRepository.findById(1L)).thenReturn(Optional.of(clienteMock));
+
+        assertThrows(ReglaNegocioException.class, () -> clienteService.reactivarCliente(1L));
     }
 
     @Test
