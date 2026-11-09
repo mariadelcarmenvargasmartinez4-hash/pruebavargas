@@ -6,6 +6,7 @@ import com.proyecto.servicios.entity.cliente.CuentaEntity;
 import com.proyecto.servicios.entity.gestopago.GestoPagoToken;
 import com.proyecto.servicios.entity.mongo.ProductoDocument;
 import com.proyecto.servicios.entity.pago.PagoServicioEntity;
+import com.proyecto.servicios.exception.CuentaNoEncontradaException;
 import com.proyecto.servicios.exception.EntidadNoProcesableException;
 import com.proyecto.servicios.exception.ProveedorPagoException;
 import com.proyecto.servicios.exception.ReglaNegocioException;
@@ -29,6 +30,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.QueryTimeoutException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -492,5 +495,127 @@ class PagoServicioServiceImplTest {
         assertEquals("EN_CONCILIACION", res.getEstatus());
         assertEquals("PAGO_SERVICIO_REFERENCIA", res.getTipoOperacion());
         assertEquals("REF-PAGO-AGUA", res.getDestinoPago());
+    }
+
+    @Test
+    @DisplayName("procesarPago: CuentaNoEncontradaException relanza EntidadNoProcesableException")
+    void procesarPagoCuentaNoEncontradaLanzaEntidadNoProcesable() {
+        PagoServicioRequestDto request = PagoTestDataBuilder.requestValido();
+        when(pagoServicioRepository.findByUpe(request.getUpe())).thenReturn(Optional.empty());
+        when(cuentaRepository.findByNumeroCuentaWithLock(request.getNumCuenta()))
+                .thenThrow(new CuentaNoEncontradaException("Cuenta no encontrada"));
+
+        assertThrows(EntidadNoProcesableException.class, () -> pagoServicioService.procesarPago(request));
+    }
+
+    @Test
+    @DisplayName("procesarPago: DataIntegrityViolationException relanza EntidadNoProcesableException")
+    void procesarPagoDataIntegrityViolationLanzaEntidadNoProcesable() {
+        PagoServicioRequestDto request = PagoTestDataBuilder.requestValido();
+        when(pagoServicioRepository.findByUpe(request.getUpe()))
+                .thenThrow(new DataIntegrityViolationException("Llave foránea no existe"));
+
+        assertThrows(EntidadNoProcesableException.class, () -> pagoServicioService.procesarPago(request));
+    }
+
+    @Test
+    @DisplayName("procesarPago: DataAccessException relanza EntidadNoProcesableException")
+    void procesarPagoDataAccessExceptionLanzaEntidadNoProcesable() {
+        PagoServicioRequestDto request = PagoTestDataBuilder.requestValido();
+        when(pagoServicioRepository.findByUpe(request.getUpe()))
+                .thenThrow(new QueryTimeoutException("Timeout de BD"));
+
+        assertThrows(EntidadNoProcesableException.class, () -> pagoServicioService.procesarPago(request));
+    }
+
+    @Test
+    @DisplayName("procesarPago: Exception no controlada relanza ReglaNegocioException")
+    void procesarPagoExceptionGenericaLanzaReglaNegocioException() {
+        PagoServicioRequestDto request = PagoTestDataBuilder.requestValido();
+        when(pagoServicioRepository.findByUpe(request.getUpe()))
+                .thenThrow(new NullPointerException("Error no esperado"));
+
+        assertThrows(ReglaNegocioException.class, () -> pagoServicioService.procesarPago(request));
+    }
+
+    @Test
+    @DisplayName("validarProductoEnCatalogo: Servicio no corresponde al producto")
+    void validarProductoServicioNoCorresponde() {
+        PagoServicioRequestDto request = PagoTestDataBuilder.requestValido();
+        ProductoDocument doc = new ProductoDocument();
+        doc.setIdProducto(request.getIdProducto().intValue());
+        doc.setIdServicio(999); // Servicio diferente al solicitado
+
+        when(productoMongoRepository.findByIdProducto(request.getIdProducto().intValue()))
+                .thenReturn(Optional.of(doc));
+
+        assertThrows(ReglaNegocioException.class, () -> pagoServicioService.procesarPago(request));
+    }
+
+    @Test
+    @DisplayName("validarProductoEnCatalogo: Precio manipulado no coincide con catálogo")
+    void validarProductoPrecioManipulado() {
+        PagoServicioRequestDto request = PagoTestDataBuilder.requestValido();
+        ProductoDocument doc = new ProductoDocument();
+        doc.setIdProducto(request.getIdProducto().intValue());
+        doc.setIdServicio(request.getIdServicio().intValue());
+        doc.setPrecio("999.00"); // Precio fijo diferente al solicitado
+        doc.setProducto("Paquete Datos");
+
+        when(productoMongoRepository.findByIdProducto(request.getIdProducto().intValue()))
+                .thenReturn(Optional.of(doc));
+
+        assertThrows(ReglaNegocioException.class, () -> pagoServicioService.procesarPago(request));
+    }
+
+    @Test
+    @DisplayName("validarProductoEnCatalogo: Producto inexistente en catálogo con registros existentes")
+    void validarProductoInexistenteEnCatalogo() {
+        PagoServicioRequestDto request = PagoTestDataBuilder.requestValido();
+
+        when(productoMongoRepository.findByIdProducto(request.getIdProducto().intValue()))
+                .thenReturn(Optional.empty());
+        when(productoMongoRepository.count()).thenReturn(10L);
+
+        assertThrows(ReglaNegocioException.class, () -> pagoServicioService.procesarPago(request));
+    }
+
+    @Test
+    @DisplayName("validarPinSeguro: PIN con formato inválido (menos de 4 dígitos)")
+    void validarPinFormatoInvalido() {
+        CuentaEntity cuenta = PagoTestDataBuilder.cuentaParaPago(new BigDecimal("500.00"));
+        assertThrows(ReglaNegocioException.class, () ->
+                ReflectionTestUtils.invokeMethod(pagoServicioService, "validarPinSeguro", cuenta, "12"));
+    }
+
+    @Test
+    @DisplayName("validarPinSeguro: Cuenta sin PIN de autorización configurado")
+    void validarPinCuentaSinPinConfigurado() {
+        PagoServicioRequestDto request = PagoTestDataBuilder.requestValido();
+        CuentaEntity cuenta = PagoTestDataBuilder.cuentaParaPago(new BigDecimal("500.00"));
+        cuenta.setPinHash(null);
+
+        when(cuentaRepository.findByNumeroCuentaWithLock(request.getNumCuenta())).thenReturn(Optional.of(cuenta));
+
+        assertThrows(ReglaNegocioException.class, () -> pagoServicioService.procesarPago(request));
+    }
+
+    @Test
+    @DisplayName("validarPinSeguro: Cuenta bloqueada temporalmente por exceso de intentos fallidos")
+    void validarPinBloqueoPorIntentosFallidos() {
+        PagoServicioRequestDto request = PagoTestDataBuilder.requestValido();
+        CuentaEntity cuenta = PagoTestDataBuilder.cuentaParaPago(new BigDecimal("500.00"));
+
+        when(cuentaRepository.findByNumeroCuentaWithLock(request.getNumCuenta())).thenReturn(Optional.of(cuenta));
+        when(passwordEncoder.matches(anyString(), anyString())).thenReturn(false);
+
+        // Fallar 3 veces consecutivas
+        assertThrows(ReglaNegocioException.class, () -> pagoServicioService.procesarPago(request));
+        assertThrows(ReglaNegocioException.class, () -> pagoServicioService.procesarPago(request));
+        assertThrows(ReglaNegocioException.class, () -> pagoServicioService.procesarPago(request));
+
+        // 4to intento debe lanzar bloqueo por exceso de intentos
+        ReglaNegocioException ex = assertThrows(ReglaNegocioException.class, () -> pagoServicioService.procesarPago(request));
+        assertTrue(ex.getMessage().contains("bloqueada temporalmente"));
     }
 }

@@ -55,6 +55,9 @@ import java.util.function.Predicate;
 public class PagoServicioServiceImpl implements PagoServicioService {
 
     private static final int MAX_INTENTOS_PIN = 3;
+    private static final String ESTATUS_APLICADO = "APLICADO";
+    private static final String TIPO_RECARGA = "RECARGA_TELEFONICA";
+    private static final String TIPO_SERVICIO = "PAGO_SERVICIO_REFERENCIA";
     private final Map<String, Integer> intentosFallidosPinPorCuenta = new ConcurrentHashMap<>();
 
     private final CuentaRepository cuentaRepository;
@@ -134,7 +137,7 @@ public class PagoServicioServiceImpl implements PagoServicioService {
         Optional<PagoServicioEntity> pagoExistente = pagoServicioRepository.findByUpe(record.upe());
         if (pagoExistente.isPresent()) {
             PagoServicioEntity previo = pagoExistente.get();
-            if ("APLICADO".equalsIgnoreCase(previo.getEstatus())) {
+            if (ESTATUS_APLICADO.equalsIgnoreCase(previo.getEstatus())) {
                 log.info("Petición de pago idempotente detectada para UPE {}. Retornando resultado previamente aplicado.", record.upe());
                 return construirRespuestaIdempotente(previo);
             }
@@ -258,13 +261,13 @@ public class PagoServicioServiceImpl implements PagoServicioService {
                 .orElse(folioInicial);
 
         transaccion.setFolioTransaccion(folioFinal);
-        transaccion.setEstatus("APLICADO");
+        transaccion.setEstatus(ESTATUS_APLICADO);
         pagoServicioRepository.save(transaccion);
 
         log.info("Pago confirmado con código 01. Saldo debitado exitosamente. Cuenta: {}, Folio: {}, Nuevo Saldo: {}",
                 record.numCuenta(), folioFinal, saldoActual);
 
-        String tipoOperacion = Boolean.TRUE.equals(record.bandera()) ? "RECARGA_TELEFONICA" : "PAGO_SERVICIO_REFERENCIA";
+        String tipoOperacion = Boolean.TRUE.equals(record.bandera()) ? TIPO_RECARGA : TIPO_SERVICIO;
         String destinoPago = Boolean.TRUE.equals(record.bandera()) ? record.telefono() : record.referencia();
 
         return PagoServicioResponseDto.builder()
@@ -280,7 +283,7 @@ public class PagoServicioServiceImpl implements PagoServicioService {
                 .upe(record.upe())
                 .tipoOperacion(tipoOperacion)
                 .destinoPago(destinoPago)
-                .estatus("APLICADO")
+                .estatus(ESTATUS_APLICADO)
                 .mensaje("Pago aplicado exitosamente con código 01 del proveedor")
                 .fechaOperacion(transaccion.getFechaOperacion())
                 .build();
@@ -289,17 +292,18 @@ public class PagoServicioServiceImpl implements PagoServicioService {
     @Override
     @Transactional(transactionManager = "sfTransactionManager")
     public PagoServicioResponseDto consultarOConciliarPago(PagoConciliacionRequestDto request) {
-        DeclarativeAssertUtil.asegurar(request != null && request.getUpe() != null && request.getUpe().matches("^\\d{10}$"),
-                () -> new ReglaNegocioException("El identificador UPE debe ser un número de 10 dígitos válido para conciliación"));
+        if (request == null || request.getUpe() == null || !request.getUpe().matches("^\\d{10}$")) {
+            throw new ReglaNegocioException("El identificador UPE debe ser un número de 10 dígitos válido para conciliación");
+        }
 
         PagoServicioEntity transaccion = pagoServicioRepository.findByUpe(request.getUpe())
                 .orElseThrow(() -> new EntidadNoProcesableException("No se encontró ninguna transacción registrada con la UPE: " + request.getUpe()));
 
-        if ("APLICADO".equalsIgnoreCase(transaccion.getEstatus())) {
+        if (ESTATUS_APLICADO.equalsIgnoreCase(transaccion.getEstatus())) {
             return construirRespuestaIdempotente(transaccion);
         }
 
-        String tipoOperacion = Boolean.TRUE.equals(transaccion.getEsRecargaTelefonica()) ? "RECARGA_TELEFONICA" : "PAGO_SERVICIO_REFERENCIA";
+        String tipoOperacion = Boolean.TRUE.equals(transaccion.getEsRecargaTelefonica()) ? TIPO_RECARGA : TIPO_SERVICIO;
         String destinoPago = Boolean.TRUE.equals(transaccion.getEsRecargaTelefonica()) ? transaccion.getTelefono() : transaccion.getReferencia();
 
         return PagoServicioResponseDto.builder()
@@ -328,37 +332,15 @@ public class PagoServicioServiceImpl implements PagoServicioService {
             Optional<ProductoDocument> productoOpt = productoMongoRepository.findByIdProducto(idProducto.intValue());
             if (productoOpt.isPresent()) {
                 ProductoDocument producto = productoOpt.get();
-                // 1. Validar correspondencia de servicio
                 DeclarativeAssertUtil.asegurar(
                         producto.getIdServicio() != null && producto.getIdServicio().longValue() == idServicio,
                         () -> new ReglaNegocioException(String.format(
                                 "El producto con ID %d no corresponde al servicio solicitado %d (Servicio en catálogo: %d)",
                                 idProducto, idServicio, producto.getIdServicio())));
 
-                // 2. Validar que el monto no haya sido manipulado si el catálogo define precio fijo
-                if (producto.getPrecio() != null && !producto.getPrecio().isBlank()) {
-                    try {
-                        BigDecimal precioCatalogo = new BigDecimal(producto.getPrecio().trim());
-                        if (precioCatalogo.compareTo(BigDecimal.ZERO) > 0) {
-                            DeclarativeAssertUtil.asegurar(
-                                    monto.compareTo(precioCatalogo) == 0,
-                                    () -> new ReglaNegocioException(String.format(Locale.ROOT,
-                                            "El monto solicitado ($%.2f) no coincide con el precio autorizado en catálogo ($%.2f) para el producto %s",
-                                            monto, precioCatalogo, producto.getProducto())));
-                        }
-                    } catch (NumberFormatException ignored) {
-                        log.debug("Precio de producto {} en catálogo es abierto o no numérico: {}", idProducto, producto.getPrecio());
-                    }
-                }
+                validarPrecioCatalogo(producto, monto, idProducto);
             } else {
-                long total = 0;
-                try {
-                    total = productoMongoRepository.count();
-                } catch (Exception ignored) {
-                }
-                if (total > 0) {
-                    throw new ReglaNegocioException("El producto con ID " + idProducto + " no existe en el catálogo autorizado de servicios");
-                }
+                validarExistenciaEnCatalogo(idProducto);
             }
         } catch (EntidadNoProcesableException | ReglaNegocioException ex) {
             throw ex;
@@ -367,10 +349,39 @@ public class PagoServicioServiceImpl implements PagoServicioService {
         }
     }
 
+    private void validarPrecioCatalogo(ProductoDocument producto, BigDecimal monto, Long idProducto) {
+        if (producto.getPrecio() == null || producto.getPrecio().isBlank()) {
+            return;
+        }
+        try {
+            BigDecimal precioCatalogo = new BigDecimal(producto.getPrecio().trim());
+            if (precioCatalogo.compareTo(BigDecimal.ZERO) > 0 && monto.compareTo(precioCatalogo) != 0) {
+                throw new ReglaNegocioException(String.format(Locale.ROOT,
+                        "El monto solicitado ($%.2f) no coincide con el precio autorizado en catálogo ($%.2f) para el producto %s",
+                        monto, precioCatalogo, producto.getProducto()));
+            }
+        } catch (NumberFormatException ex) {
+            log.debug("Precio de producto {} en catálogo es abierto o no numérico: {}", idProducto, producto.getPrecio());
+        }
+    }
+
+    private void validarExistenciaEnCatalogo(Long idProducto) {
+        try {
+            long total = productoMongoRepository.count();
+            if (total > 0) {
+                throw new ReglaNegocioException("El producto con ID " + idProducto + " no existe en el catálogo autorizado de servicios");
+            }
+        } catch (ReglaNegocioException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            log.warn("No se pudo verificar el conteo de productos en catálogo: {}", ex.getMessage());
+        }
+    }
+
     private void validarPinSeguro(CuentaEntity cuenta, String pinIngresado) {
-        DeclarativeAssertUtil.asegurar(
-                pinIngresado != null && pinIngresado.trim().matches("^\\d{4,8}$"),
-                () -> new ReglaNegocioException("El PIN o pass seguro de verificación debe contener entre 4 y 8 dígitos numéricos"));
+        if (pinIngresado == null || !pinIngresado.trim().matches("^\\d{4,8}$")) {
+            throw new ReglaNegocioException("El PIN o pass seguro de verificación debe contener entre 4 y 8 dígitos numéricos");
+        }
 
         String numCuenta = cuenta.getNumeroCuenta();
         int intentos = intentosFallidosPinPorCuenta.getOrDefault(numCuenta, 0);
@@ -400,9 +411,9 @@ public class PagoServicioServiceImpl implements PagoServicioService {
                 .orElseThrow(() -> new ProveedorPagoException("No fue posible obtener un token de autenticación válido con el proveedor GestoPago"));
     }
 
-    private String construirPayloadTransaccion(PagoServicioRequestRecord record) {
+    private String construirPayloadTransaccion(PagoServicioRequestRecord requestRecord) {
         return String.format(Locale.ROOT, "{\"numCuenta\":\"%s\",\"upe\":\"%s\",\"monto\":%.2f,\"servicio\":%d,\"producto\":%d}",
-                record.numCuenta(), record.upe(), record.monto(), record.idServicio(), record.idProducto());
+                requestRecord.numCuenta(), requestRecord.upe(), requestRecord.monto(), requestRecord.idServicio(), requestRecord.idProducto());
     }
 
     private String obtenerClaveCifradoValida() {
@@ -422,7 +433,7 @@ public class PagoServicioServiceImpl implements PagoServicioService {
     }
 
     private PagoServicioResponseDto construirRespuestaIdempotente(PagoServicioEntity previo) {
-        String tipoOperacion = Boolean.TRUE.equals(previo.getEsRecargaTelefonica()) ? "RECARGA_TELEFONICA" : "PAGO_SERVICIO_REFERENCIA";
+        String tipoOperacion = Boolean.TRUE.equals(previo.getEsRecargaTelefonica()) ? TIPO_RECARGA : TIPO_SERVICIO;
         String destinoPago = Boolean.TRUE.equals(previo.getEsRecargaTelefonica()) ? previo.getTelefono() : previo.getReferencia();
 
         return PagoServicioResponseDto.builder()
@@ -436,7 +447,7 @@ public class PagoServicioServiceImpl implements PagoServicioService {
                 .upe(previo.getUpe())
                 .tipoOperacion(tipoOperacion)
                 .destinoPago(destinoPago)
-                .estatus("APLICADO")
+                .estatus(ESTATUS_APLICADO)
                 .mensaje("Pago aplicado previamente (Respuesta idempotente)")
                 .fechaOperacion(previo.getFechaOperacion())
                 .build();
