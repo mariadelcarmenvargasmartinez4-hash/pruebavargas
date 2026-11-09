@@ -618,4 +618,121 @@ class PagoServicioServiceImplTest {
         ReglaNegocioException ex = assertThrows(ReglaNegocioException.class, () -> pagoServicioService.procesarPago(request));
         assertTrue(ex.getMessage().contains("bloqueada temporalmente"));
     }
+
+    @Test
+    @DisplayName("validarPrecioCatalogo: Precio nulo o en blanco en catalogo no restringe monto")
+    void validarPrecioCatalogoPrecioNuloOEnBlanco() {
+        ProductoDocument docNull = new ProductoDocument();
+        docNull.setPrecio(null);
+        ReflectionTestUtils.invokeMethod(pagoServicioService, "validarPrecioCatalogo", docNull, new BigDecimal("100.00"), 101L);
+
+        ProductoDocument docBlank = new ProductoDocument();
+        docBlank.setPrecio("   ");
+        ReflectionTestUtils.invokeMethod(pagoServicioService, "validarPrecioCatalogo", docBlank, new BigDecimal("100.00"), 101L);
+    }
+
+    @Test
+    @DisplayName("validarPrecioCatalogo: Precio cero o no numerico en catalogo no bloquea el flujo")
+    void validarPrecioCatalogoPrecioCeroONoNumerico() {
+        ProductoDocument docCero = new ProductoDocument();
+        docCero.setPrecio("0.00");
+        ReflectionTestUtils.invokeMethod(pagoServicioService, "validarPrecioCatalogo", docCero, new BigDecimal("150.00"), 101L);
+
+        ProductoDocument docNoNum = new ProductoDocument();
+        docNoNum.setPrecio("ABIERTO");
+        ReflectionTestUtils.invokeMethod(pagoServicioService, "validarPrecioCatalogo", docNoNum, new BigDecimal("150.00"), 101L);
+    }
+
+    @Test
+    @DisplayName("validarExistenciaEnCatalogo: Conteo cero o error de conexion MongoDB tolera el flujo")
+    void validarExistenciaEnCatalogoConteoCeroOError() {
+        when(productoMongoRepository.count()).thenReturn(0L);
+        ReflectionTestUtils.invokeMethod(pagoServicioService, "validarExistenciaEnCatalogo", 101L);
+
+        when(productoMongoRepository.count()).thenThrow(new RuntimeException("Mongo connection refused"));
+        ReflectionTestUtils.invokeMethod(pagoServicioService, "validarExistenciaEnCatalogo", 101L);
+    }
+
+    @Test
+    @DisplayName("validarProductoEnCatalogo: Error inesperado en findByIdProducto se captura limpiamente")
+    void validarProductoEnCatalogoErrorInesperadoMongo() {
+        when(productoMongoRepository.findByIdProducto(101))
+                .thenThrow(new RuntimeException("Error inesperado en Mongo"));
+
+        ReflectionTestUtils.invokeMethod(pagoServicioService, "validarProductoEnCatalogo", 1L, 101L, new BigDecimal("100.00"));
+    }
+
+    @Test
+    @DisplayName("validarPinSeguro: PIN nulo lanza ReglaNegocioException")
+    void validarPinSeguroPinNulo() {
+        CuentaEntity cuenta = PagoTestDataBuilder.cuentaParaPago(new BigDecimal("500.00"));
+        assertThrows(ReglaNegocioException.class, () ->
+                ReflectionTestUtils.invokeMethod(pagoServicioService, "validarPinSeguro", cuenta, (String) null));
+    }
+
+    @Test
+    @DisplayName("consultarOConciliarPago: UPE nula en el DTO lanza ReglaNegocioException")
+    void consultarOConciliarPagoUpeNula() {
+        PagoConciliacionRequestDto dto = new PagoConciliacionRequestDto();
+        dto.setUpe(null);
+        assertThrows(ReglaNegocioException.class, () -> pagoServicioService.consultarOConciliarPago(dto));
+    }
+
+    @Test
+    @DisplayName("consultarOConciliarPago: Transaccion de recarga telefonica en estado EN_CONCILIACION retorna tipo y telefono")
+    void consultarOConciliarPagoRecargaTelefonicaEnConciliacion() {
+        PagoConciliacionRequestDto dto = new PagoConciliacionRequestDto();
+        dto.setUpe("1234567890");
+
+        PagoServicioEntity transaccion = PagoServicioEntity.builder()
+                .upe("1234567890")
+                .folioTransaccion("FOL-RECARGA-001")
+                .numCuenta("1234567890123456")
+                .idServicio(2L)
+                .idProducto(201L)
+                .monto(new BigDecimal("50.00"))
+                .esRecargaTelefonica(true)
+                .telefono("5512345678")
+                .estatus("EN_CONCILIACION")
+                .fechaOperacion(LocalDateTime.now())
+                .build();
+
+        when(pagoServicioRepository.findByUpe("1234567890")).thenReturn(Optional.of(transaccion));
+
+        PagoServicioResponseDto res = pagoServicioService.consultarOConciliarPago(dto);
+
+        assertNotNull(res);
+        assertEquals("EN_CONCILIACION", res.getEstatus());
+        assertEquals("RECARGA_TELEFONICA", res.getTipoOperacion());
+        assertEquals("5512345678", res.getDestinoPago());
+    }
+
+    @Test
+    @DisplayName("consultarOConciliarPago: Transaccion idempotente de servicio de referencia retorna tipo y referencia")
+    void consultarOConciliarPagoServicioReferenciaIdempotente() {
+        PagoConciliacionRequestDto dto = new PagoConciliacionRequestDto();
+        dto.setUpe("1234567890");
+
+        PagoServicioEntity transaccion = PagoServicioEntity.builder()
+                .upe("1234567890")
+                .folioTransaccion("FOL-SRV-001")
+                .numCuenta("1234567890123456")
+                .idServicio(1L)
+                .idProducto(101L)
+                .monto(new BigDecimal("250.00"))
+                .esRecargaTelefonica(false)
+                .referencia("REF-CFE-999")
+                .estatus("APLICADO")
+                .fechaOperacion(LocalDateTime.now())
+                .build();
+
+        when(pagoServicioRepository.findByUpe("1234567890")).thenReturn(Optional.of(transaccion));
+
+        PagoServicioResponseDto res = pagoServicioService.consultarOConciliarPago(dto);
+
+        assertNotNull(res);
+        assertEquals("APLICADO", res.getEstatus());
+        assertEquals("PAGO_SERVICIO_REFERENCIA", res.getTipoOperacion());
+        assertEquals("REF-CFE-999", res.getDestinoPago());
+    }
 }
