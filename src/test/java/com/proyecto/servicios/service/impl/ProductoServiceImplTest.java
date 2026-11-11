@@ -1,4 +1,5 @@
-package com.proyecto.servicios.service;
+package com.proyecto.servicios.service.impl;
+import com.proyecto.servicios.service.*;
 
 import com.proyecto.servicios.client.GestoPagoAuthClient;
 import com.proyecto.servicios.client.GestoPagoProductClient;
