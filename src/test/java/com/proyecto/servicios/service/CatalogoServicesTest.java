@@ -13,9 +13,9 @@ import com.proyecto.servicios.model.common.PaginaResponseRecord;
 import com.proyecto.servicios.repositorys.catalogo.EstadoCivilRepository;
 import com.proyecto.servicios.repositorys.catalogo.NacionalidadRepository;
 import com.proyecto.servicios.repositorys.catalogo.SexoRepository;
-import com.proyecto.servicios.service.Impl.EstadoCivilServiceImpl;
-import com.proyecto.servicios.service.Impl.NacionalidadServiceImpl;
-import com.proyecto.servicios.service.Impl.SexoServiceImpl;
+import com.proyecto.servicios.service.impl.EstadoCivilServiceImpl;
+import com.proyecto.servicios.service.impl.NacionalidadServiceImpl;
+import com.proyecto.servicios.service.impl.SexoServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -403,4 +403,5 @@ public class CatalogoServicesTest {
         assertFalse(estadoCivilService.esValidoYActivo(""));
         assertFalse(estadoCivilService.esValidoYActivo(null));
     }
-}
+
+    }

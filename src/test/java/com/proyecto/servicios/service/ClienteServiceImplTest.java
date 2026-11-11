@@ -19,7 +19,7 @@ import com.proyecto.servicios.repositorys.cliente.ClienteRepository;
 import com.proyecto.servicios.repositorys.cliente.CuentaRepository;
 import com.proyecto.servicios.repositorys.cliente.DomicilioRepository;
 import com.proyecto.servicios.repositorys.cliente.UsuarioAccesoRepository;
-import com.proyecto.servicios.service.Impl.ClienteServiceImpl;
+import com.proyecto.servicios.service.impl.ClienteServiceImpl;
 import com.proyecto.servicios.util.ClienteTestDataBuilder;
 import com.proyecto.servicios.util.CuentaTestDataBuilder;
 import com.proyecto.servicios.util.GeneradorCuentaBancariaUtil;

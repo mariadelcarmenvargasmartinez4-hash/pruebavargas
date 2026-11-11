@@ -18,7 +18,7 @@ import com.proyecto.servicios.model.pago.PagoServicioResponseDto;
 import com.proyecto.servicios.repositorys.cliente.CuentaRepository;
 import com.proyecto.servicios.repositorys.mongo.ProductoMongoRepository;
 import com.proyecto.servicios.repositorys.pago.PagoServicioRepository;
-import com.proyecto.servicios.service.Impl.PagoServicioServiceImpl;
+import com.proyecto.servicios.service.impl.PagoServicioServiceImpl;
 import com.proyecto.servicios.util.AesEncryptionUtil;
 import com.proyecto.servicios.util.PagoTestDataBuilder;
 import com.proyecto.servicios.util.TestCredentials;

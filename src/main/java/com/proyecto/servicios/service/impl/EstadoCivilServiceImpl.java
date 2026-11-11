@@ -1,4 +1,4 @@
-package com.proyecto.servicios.service.Impl;
+package com.proyecto.servicios.service.impl;
 
 import com.proyecto.servicios.entity.catalogo.EstadoCivilEntity;
 import com.proyecto.servicios.exception.CatalogoDuplicadoException;
@@ -30,6 +30,8 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 public class EstadoCivilServiceImpl implements EstadoCivilService {
+    private static final String MSG_ESTADO_CIVIL_NO_ENCONTRADO = "Elemento de estado civil no encontrado con ID ";
+
 
     private final EstadoCivilRepository estadoCivilRepository;
 
@@ -86,7 +88,7 @@ public class EstadoCivilServiceImpl implements EstadoCivilService {
     public CatalogoItemDto obtenerPorId(Long id) {
         return estadoCivilRepository.findById(id)
                 .map(this::mapearADto)
-                .orElseThrow(() -> new CatalogoNoEncontradoException("Elemento de estado civil no encontrado con ID " + id));
+                .orElseThrow(() -> new CatalogoNoEncontradoException(MSG_ESTADO_CIVIL_NO_ENCONTRADO + id));
     }
 
     @Override
@@ -127,7 +129,7 @@ public class EstadoCivilServiceImpl implements EstadoCivilService {
     public CatalogoItemDto actualizar(Long id, CatalogoActualizacionDto dto) {
         dto.toRecord(); // Validación temprana Fail-Fast en Record
         EstadoCivilEntity entidad = estadoCivilRepository.findById(id)
-                .orElseThrow(() -> new CatalogoNoEncontradoException("Elemento de estado civil no encontrado con ID " + id));
+                .orElseThrow(() -> new CatalogoNoEncontradoException(MSG_ESTADO_CIVIL_NO_ENCONTRADO + id));
 
         Optional.ofNullable(dto.getDescripcion())
                 .map(String::trim)
@@ -148,7 +150,7 @@ public class EstadoCivilServiceImpl implements EstadoCivilService {
     @Transactional(transactionManager = "sfTransactionManager")
     public void desactivar(Long id) {
         EstadoCivilEntity entidad = estadoCivilRepository.findById(id)
-                .orElseThrow(() -> new CatalogoNoEncontradoException("Elemento de estado civil no encontrado con ID " + id));
+                .orElseThrow(() -> new CatalogoNoEncontradoException(MSG_ESTADO_CIVIL_NO_ENCONTRADO + id));
         entidad.setActivo(false);
         estadoCivilRepository.save(entidad);
     }

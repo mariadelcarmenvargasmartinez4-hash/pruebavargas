@@ -12,7 +12,7 @@ import com.proyecto.servicios.model.cuenta.CuentaCreacionRequestDto;
 import com.proyecto.servicios.model.cuenta.SaldoCuentaDto;
 import com.proyecto.servicios.repositorys.cliente.ClienteRepository;
 import com.proyecto.servicios.repositorys.cliente.CuentaRepository;
-import com.proyecto.servicios.service.Impl.CuentaServiceImpl;
+import com.proyecto.servicios.service.impl.CuentaServiceImpl;
 import com.proyecto.servicios.util.ClienteTestDataBuilder;
 import com.proyecto.servicios.util.CuentaTestDataBuilder;
 import com.proyecto.servicios.util.GeneradorCuentaBancariaUtil;

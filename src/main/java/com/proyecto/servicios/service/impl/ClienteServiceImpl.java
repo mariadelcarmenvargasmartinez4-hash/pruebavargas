@@ -1,4 +1,4 @@
-package com.proyecto.servicios.service.Impl;
+package com.proyecto.servicios.service.impl;
 
 import com.proyecto.servicios.entity.cliente.ClienteEntity;
 import com.proyecto.servicios.entity.cliente.CuentaEntity;
@@ -55,6 +55,9 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 public class ClienteServiceImpl implements ClienteService {
+    private static final String CAMPO_FECHA_CREACION = "fechaCreacion";
+    private static final String MSG_CLIENTE_NO_ENCONTRADO = "Cliente no encontrado con ID ";
+
 
     private final ClienteRepository clienteRepository;
     private final DomicilioRepository domicilioRepository;
@@ -206,9 +209,9 @@ public class ClienteServiceImpl implements ClienteService {
 
             Optional.ofNullable(filtro.fechaInicio())
                     .map(fi -> Optional.ofNullable(filtro.fechaFin())
-                            .map(ff -> cb.between(root.get("fechaCreacion"), fi, ff))
-                            .orElseGet(() -> cb.greaterThanOrEqualTo(root.get("fechaCreacion"), fi)))
-                    .or(() -> Optional.ofNullable(filtro.fechaFin()).map(ff -> cb.lessThanOrEqualTo(root.get("fechaCreacion"), ff)))
+                            .map(ff -> cb.between(root.get(CAMPO_FECHA_CREACION), fi, ff))
+                            .orElseGet(() -> cb.greaterThanOrEqualTo(root.get(CAMPO_FECHA_CREACION), fi)))
+                    .or(() -> Optional.ofNullable(filtro.fechaFin()).map(ff -> cb.lessThanOrEqualTo(root.get(CAMPO_FECHA_CREACION), ff)))
                     .ifPresent(predicates::add);
 
             return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
@@ -225,7 +228,7 @@ public class ClienteServiceImpl implements ClienteService {
     public ClienteRegistroResponseDto obtenerClientePorId(Long id) {
         return clienteRepository.findById(id)
                 .map(this::construirRespuestaCompleta)
-                .orElseThrow(() -> new ClienteNoEncontradoException("Cliente no encontrado con ID " + id));
+                .orElseThrow(() -> new ClienteNoEncontradoException(MSG_CLIENTE_NO_ENCONTRADO + id));
     }
 
     @Override
@@ -246,7 +249,7 @@ public class ClienteServiceImpl implements ClienteService {
         log.info("Iniciando actualización de cliente con ID: {}", id);
 
         ClienteEntity cliente = clienteRepository.findById(id)
-                .orElseThrow(() -> new ClienteNoEncontradoException("Cliente no encontrado con ID " + id));
+                .orElseThrow(() -> new ClienteNoEncontradoException(MSG_CLIENTE_NO_ENCONTRADO + id));
 
         // Regla: No se permite modificar información de clientes dados de baja
         DeclarativeAssertUtil.asegurar(Boolean.TRUE.equals(cliente.getActivo()),
@@ -268,7 +271,7 @@ public class ClienteServiceImpl implements ClienteService {
         log.info("Ejecutando baja lógica para cliente con ID: {}", id);
 
         ClienteEntity cliente = clienteRepository.findById(id)
-                .orElseThrow(() -> new ClienteNoEncontradoException("Cliente no encontrado con ID " + id));
+                .orElseThrow(() -> new ClienteNoEncontradoException(MSG_CLIENTE_NO_ENCONTRADO + id));
 
         // Regla: Validar que no se encuentre ya dado de baja
         DeclarativeAssertUtil.asegurar(Boolean.TRUE.equals(cliente.getActivo()),
@@ -296,7 +299,7 @@ public class ClienteServiceImpl implements ClienteService {
         log.info("Reactivando cliente con ID: {}", id);
 
         ClienteEntity cliente = clienteRepository.findById(id)
-                .orElseThrow(() -> new ClienteNoEncontradoException("Cliente no encontrado con ID " + id));
+                .orElseThrow(() -> new ClienteNoEncontradoException(MSG_CLIENTE_NO_ENCONTRADO + id));
 
         // Regla: Validar si ya está activo
         DeclarativeAssertUtil.prohibir(Boolean.TRUE.equals(cliente.getActivo()),

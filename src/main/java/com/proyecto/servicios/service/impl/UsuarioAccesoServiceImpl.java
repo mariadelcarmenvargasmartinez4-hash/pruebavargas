@@ -1,4 +1,4 @@
-package com.proyecto.servicios.service.Impl;
+package com.proyecto.servicios.service.impl;
 
 import com.proyecto.servicios.entity.cliente.ClienteEntity;
 import com.proyecto.servicios.entity.cliente.UsuarioAccesoEntity;
@@ -54,6 +54,7 @@ import java.util.function.Predicate;
 @Service
 public class UsuarioAccesoServiceImpl implements UsuarioAccesoService {
 
+    private static final String MSG_USUARIO_NO_ENCONTRADO = "Usuario no encontrado con ID ";
     private final UsuarioAccesoRepository usuarioRepository;
     private final ClienteRepository clienteRepository;
     private final PasswordEncoder passwordEncoder;
@@ -69,13 +70,13 @@ public class UsuarioAccesoServiceImpl implements UsuarioAccesoService {
     @Override
     @Transactional(transactionManager = "sfTransactionManager")
     public UsuarioResponseDto crearUsuario(UsuarioCreacionRequestDto request) {
-        UsuarioCreacionRequestRecord record = request.toRecord();
+        UsuarioCreacionRequestRecord creacionRecord = request.toRecord();
 
         DeclarativeAssertUtil.prohibir(
-                usuarioRepository.existsByUsername(record.username()),
-                () -> new UsuarioYaExisteException("El nombre de usuario '" + record.username() + "' ya se encuentra registrado"));
+                usuarioRepository.existsByUsername(creacionRecord.username()),
+                () -> new UsuarioYaExisteException("El nombre de usuario '" + creacionRecord.username() + "' ya se encuentra registrado"));
 
-        ClienteEntity cliente = Optional.ofNullable(record.clienteId())
+        ClienteEntity cliente = Optional.ofNullable(creacionRecord.clienteId())
                 .map(id -> clienteRepository.findById(id)
                         .orElseThrow(() -> new ClienteNoEncontradoException("Cliente no encontrado con ID " + id)))
                 .orElse(null);
@@ -91,9 +92,9 @@ public class UsuarioAccesoServiceImpl implements UsuarioAccesoService {
 
         UsuarioAccesoEntity usuario = UsuarioAccesoEntity.builder()
                 .cliente(cliente)
-                .username(record.username())
+                .username(creacionRecord.username())
                 .passwordHash(passwordEncoder.encode(request.getPassword()))
-                .rol(record.rol())
+                .rol(creacionRecord.rol())
                 .activo(true)
                 .build();
 
@@ -103,41 +104,41 @@ public class UsuarioAccesoServiceImpl implements UsuarioAccesoService {
     @Override
     @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
     public PaginaResponseRecord<UsuarioResponseDto> buscarUsuariosDinamico(UsuarioBusquedaRequestDto filtro) {
-        UsuarioBusquedaRequestRecord record = filtro.toRecord();
+        UsuarioBusquedaRequestRecord busquedaRecord = filtro.toRecord();
 
-        Sort sort = Sort.by(Sort.Direction.fromString(record.sortDir()), record.sortBy());
-        Pageable pageable = PageRequest.of(record.page(), record.size(), sort);
+        Sort sort = Sort.by(Sort.Direction.fromString(busquedaRecord.sortDir()), busquedaRecord.sortBy());
+        Pageable pageable = PageRequest.of(busquedaRecord.page(), busquedaRecord.size(), sort);
 
         Specification<UsuarioAccesoEntity> spec = (root, query, cb) -> {
             List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
 
-            Optional.ofNullable(record.id())
+            Optional.ofNullable(busquedaRecord.id())
                     .map(id -> cb.equal(root.get("id"), id))
                     .ifPresent(predicates::add);
 
-            Optional.ofNullable(record.username())
+            Optional.ofNullable(busquedaRecord.username())
                     .filter(Predicate.not(String::isBlank))
                     .map(u -> cb.like(cb.lower(root.get("username")), "%" + u.toLowerCase() + "%"))
                     .ifPresent(predicates::add);
 
-            Optional.ofNullable(record.rol())
+            Optional.ofNullable(busquedaRecord.rol())
                     .filter(Predicate.not(String::isBlank))
                     .map(r -> cb.equal(root.get("rol"), r))
                     .ifPresent(predicates::add);
 
-            Optional.ofNullable(record.activo())
+            Optional.ofNullable(busquedaRecord.activo())
                     .map(a -> cb.equal(root.get("activo"), a))
                     .ifPresent(predicates::add);
 
-            Optional.ofNullable(record.clienteId())
+            Optional.ofNullable(busquedaRecord.clienteId())
                     .map(cId -> cb.equal(root.get("cliente").get("id"), cId))
                     .ifPresent(predicates::add);
 
-            Optional.ofNullable(record.fechaInicio())
+            Optional.ofNullable(busquedaRecord.fechaInicio())
                     .map(fi -> cb.greaterThanOrEqualTo(root.get("fechaCreacion"), fi))
                     .ifPresent(predicates::add);
 
-            Optional.ofNullable(record.fechaFin())
+            Optional.ofNullable(busquedaRecord.fechaFin())
                     .map(ff -> cb.lessThanOrEqualTo(root.get("fechaCreacion"), ff))
                     .ifPresent(predicates::add);
 
@@ -151,11 +152,11 @@ public class UsuarioAccesoServiceImpl implements UsuarioAccesoService {
     @Override
     @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
     public UsuarioResponseDto obtenerDetalleUsuario(UsuarioDetalleRequestDto request) {
-        UsuarioDetalleRequestRecord record = request.toRecord();
+        UsuarioDetalleRequestRecord detalleRecord = request.toRecord();
 
-        UsuarioAccesoEntity usuario = Optional.ofNullable(record.id())
+        UsuarioAccesoEntity usuario = Optional.ofNullable(detalleRecord.id())
                 .flatMap(usuarioRepository::findById)
-                .or(() -> Optional.ofNullable(record.username()).flatMap(usuarioRepository::findByUsername))
+                .or(() -> Optional.ofNullable(detalleRecord.username()).flatMap(usuarioRepository::findByUsername))
                 .orElseThrow(() -> new UsuarioNoEncontradoException("Usuario no encontrado con los criterios especificados"));
 
         return toResponseDto(usuario);
@@ -164,12 +165,12 @@ public class UsuarioAccesoServiceImpl implements UsuarioAccesoService {
     @Override
     @Transactional(transactionManager = "sfTransactionManager")
     public UsuarioResponseDto actualizarUsuario(UsuarioActualizacionRequestDto request) {
-        UsuarioActualizacionRequestRecord record = request.toRecord();
+        UsuarioActualizacionRequestRecord actualizacionRecord = request.toRecord();
 
-        UsuarioAccesoEntity usuario = usuarioRepository.findById(record.id())
-                .orElseThrow(() -> new UsuarioNoEncontradoException("Usuario no encontrado con ID " + record.id()));
+        UsuarioAccesoEntity usuario = usuarioRepository.findById(actualizacionRecord.id())
+                .orElseThrow(() -> new UsuarioNoEncontradoException(MSG_USUARIO_NO_ENCONTRADO + actualizacionRecord.id()));
 
-        Optional.ofNullable(record.username())
+        Optional.ofNullable(actualizacionRecord.username())
                 .filter(Predicate.not(u -> u.equalsIgnoreCase(usuario.getUsername())))
                 .ifPresent(u -> {
                     DeclarativeAssertUtil.prohibir(
@@ -178,7 +179,7 @@ public class UsuarioAccesoServiceImpl implements UsuarioAccesoService {
                     usuario.setUsername(u);
                 });
 
-        Optional.ofNullable(record.rol())
+        Optional.ofNullable(actualizacionRecord.rol())
                 .ifPresent(usuario::setRol);
 
         return toResponseDto(usuarioRepository.save(usuario));
@@ -187,30 +188,30 @@ public class UsuarioAccesoServiceImpl implements UsuarioAccesoService {
     @Override
     @Transactional(transactionManager = "sfTransactionManager")
     public void cambiarPassword(UsuarioCambioPasswordRequestDto request) {
-        UsuarioCambioPasswordRequestRecord record = request.toRecord();
+        UsuarioCambioPasswordRequestRecord cambioPassRecord = request.toRecord();
 
-        UsuarioAccesoEntity usuario = usuarioRepository.findById(record.id())
-                .orElseThrow(() -> new UsuarioNoEncontradoException("Usuario no encontrado con ID " + record.id()));
+        UsuarioAccesoEntity usuario = usuarioRepository.findById(cambioPassRecord.id())
+                .orElseThrow(() -> new UsuarioNoEncontradoException(MSG_USUARIO_NO_ENCONTRADO + cambioPassRecord.id()));
 
         DeclarativeAssertUtil.asegurar(
-                passwordEncoder.matches(record.passwordActual(), usuario.getPasswordHash()),
+                passwordEncoder.matches(cambioPassRecord.passwordActual(), usuario.getPasswordHash()),
                 () -> new PasswordInvalidaException("La contraseña actual proporcionada no coincide con los registros"));
 
-        usuario.setPasswordHash(passwordEncoder.encode(record.nuevaPassword()));
+        usuario.setPasswordHash(passwordEncoder.encode(cambioPassRecord.nuevaPassword()));
         usuarioRepository.save(usuario);
     }
 
     @Override
     @Transactional(transactionManager = "sfTransactionManager")
     public UsuarioResponseDto desactivarUsuario(UsuarioEstadoRequestDto request) {
-        UsuarioEstadoRequestRecord record = request.toRecord();
+        UsuarioEstadoRequestRecord estadoRecord = request.toRecord();
 
-        UsuarioAccesoEntity usuario = usuarioRepository.findById(record.id())
-                .orElseThrow(() -> new UsuarioNoEncontradoException("Usuario no encontrado con ID " + record.id()));
+        UsuarioAccesoEntity usuario = usuarioRepository.findById(estadoRecord.id())
+                .orElseThrow(() -> new UsuarioNoEncontradoException(MSG_USUARIO_NO_ENCONTRADO + estadoRecord.id()));
 
         DeclarativeAssertUtil.asegurar(
                 Boolean.TRUE.equals(usuario.getActivo()),
-                () -> new ReglaNegocioException("El usuario con ID " + record.id() + " ya se encuentra inactivo"));
+                () -> new ReglaNegocioException("El usuario con ID " + estadoRecord.id() + " ya se encuentra inactivo"));
 
         usuario.setActivo(false);
         return toResponseDto(usuarioRepository.save(usuario));
@@ -219,14 +220,14 @@ public class UsuarioAccesoServiceImpl implements UsuarioAccesoService {
     @Override
     @Transactional(transactionManager = "sfTransactionManager")
     public UsuarioResponseDto reactivarUsuario(UsuarioEstadoRequestDto request) {
-        UsuarioEstadoRequestRecord record = request.toRecord();
+        UsuarioEstadoRequestRecord estadoRecord = request.toRecord();
 
-        UsuarioAccesoEntity usuario = usuarioRepository.findById(record.id())
-                .orElseThrow(() -> new UsuarioNoEncontradoException("Usuario no encontrado con ID " + record.id()));
+        UsuarioAccesoEntity usuario = usuarioRepository.findById(estadoRecord.id())
+                .orElseThrow(() -> new UsuarioNoEncontradoException(MSG_USUARIO_NO_ENCONTRADO + estadoRecord.id()));
 
         DeclarativeAssertUtil.prohibir(
                 Boolean.TRUE.equals(usuario.getActivo()),
-                () -> new ReglaNegocioException("El usuario con ID " + record.id() + " ya se encuentra activo"));
+                () -> new ReglaNegocioException("El usuario con ID " + estadoRecord.id() + " ya se encuentra activo"));
 
         usuario.setActivo(true);
         return toResponseDto(usuarioRepository.save(usuario));

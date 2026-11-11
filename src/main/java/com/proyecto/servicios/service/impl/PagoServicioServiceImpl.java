@@ -1,4 +1,4 @@
-package com.proyecto.servicios.service.Impl;
+package com.proyecto.servicios.service.impl;
 
 import com.proyecto.servicios.client.GestoPagoAuthClient;
 import com.proyecto.servicios.client.GestoPagoSendTxClient;
@@ -131,72 +131,72 @@ public class PagoServicioServiceImpl implements PagoServicioService {
         // =========================================================================
 
         // 1. Validación de Formatos y tipos (Fail-Fast en Record inmutable)
-        PagoServicioRequestRecord record = request.toRecord();
+        PagoServicioRequestRecord requestRecord = request.toRecord();
 
         // 2. Control de Concurrencia e Idempotencia: Verificar si el UPE ya fue procesado
-        Optional<PagoServicioEntity> pagoExistente = pagoServicioRepository.findByUpe(record.upe());
+        Optional<PagoServicioEntity> pagoExistente = pagoServicioRepository.findByUpe(requestRecord.upe());
         if (pagoExistente.isPresent()) {
             PagoServicioEntity previo = pagoExistente.get();
             if (ESTATUS_APLICADO.equalsIgnoreCase(previo.getEstatus())) {
-                log.info("Petición de pago idempotente detectada para UPE {}. Retornando resultado previamente aplicado.", record.upe());
+                log.info("Petición de pago idempotente detectada para UPE {}. Retornando resultado previamente aplicado.", requestRecord.upe());
                 return construirRespuestaIdempotente(previo);
             }
             if ("EN_CONCILIACION".equalsIgnoreCase(previo.getEstatus()) || "PROCESANDO".equalsIgnoreCase(previo.getEstatus())) {
-                throw new ReglaNegocioException("La transacción con UPE " + record.upe() +
+                throw new ReglaNegocioException("La transacción con UPE " + requestRecord.upe() +
                         " se encuentra actualmente en estado " + previo.getEstatus() + " (Folio: " + previo.getFolioTransaccion() +
                         "). No se puede procesar una nueva solicitud hasta que sea consultada o conciliada.");
             }
         }
 
         // 3. Validación de Catálogo de Productos y Restricciones de Monto
-        validarProductoEnCatalogo(record.idServicio(), record.idProducto(), record.monto());
+        validarProductoEnCatalogo(requestRecord.idServicio(), requestRecord.idProducto(), requestRecord.monto());
 
         // 4. Validación de la Cuenta con Bloqueo Pesimista (previene sobregiros por transacciones concurrentes)
-        CuentaEntity cuenta = cuentaRepository.findByNumeroCuentaWithLock(record.numCuenta())
-                .or(() -> cuentaRepository.findByNumeroCuenta(record.numCuenta()))
+        CuentaEntity cuenta = cuentaRepository.findByNumeroCuentaWithLock(requestRecord.numCuenta())
+                .or(() -> cuentaRepository.findByNumeroCuenta(requestRecord.numCuenta()))
                 .orElseThrow(() -> new EntidadNoProcesableException(
-                        "No se encontró la cuenta bancaria con número " + record.numCuenta() + " en la base de datos"));
+                        "No se encontró la cuenta bancaria con número " + requestRecord.numCuenta() + " en la base de datos"));
 
         DeclarativeAssertUtil.asegurar(
                 "ACTIVA".equalsIgnoreCase(cuenta.getEstatus()),
                 () -> new ReglaNegocioException("La cuenta bancaria no se encuentra ACTIVA para transacciones"));
 
         // 5. Validación estricta del PIN o Pass Seguro con Throttling / Rate-Limiting
-        validarPinSeguro(cuenta, record.pin());
+        validarPinSeguro(cuenta, requestRecord.pin());
 
         // 6. Validación de Saldo Disponible
         DeclarativeAssertUtil.asegurar(
-                cuenta.getSaldo().compareTo(record.monto()) >= 0,
+                cuenta.getSaldo().compareTo(requestRecord.monto()) >= 0,
                 () -> new ReglaNegocioException(
                         String.format(Locale.ROOT, "Saldo insuficiente. Saldo disponible: $%.2f, Monto requerido: $%.2f",
-                                cuenta.getSaldo(), record.monto())));
+                                cuenta.getSaldo(), requestRecord.monto())));
 
         // =========================================================================
         // PASO 3: INTEGRACIÓN CON CLIENTES FEIGN Y CIFRADO AES
         // =========================================================================
 
-        Integer distribuidorEfectivo = Optional.ofNullable(record.idDistribuidor()).orElse(this.idDistribuidor);
+        Integer distribuidorEfectivo = Optional.ofNullable(requestRecord.idDistribuidor()).orElse(this.idDistribuidor);
 
         // FeignClient 1 (Autenticación/Token): Obtener o renovar token de GestoPago (verificando vigencia)
         String token = obtenerTokenProveedor(distribuidorEfectivo);
 
         // Cifrado AES-GCM del payload sensible y firma digital HMAC-SHA256
-        String payloadPlano = construirPayloadTransaccion(record);
+        String payloadPlano = construirPayloadTransaccion(requestRecord);
         String claveCifrado = obtenerClaveCifradoValida();
         String datosEncriptados = aesEncryptionUtil.encriptar(payloadPlano, claveCifrado);
         String firmaTransaccion = aesEncryptionUtil.firmarPayload(payloadPlano, claveCifrado);
 
         // Construcción de la petición para FeignClient 3 (SendTx)
         GestoPagoSendTxRequest sendTxRequest = GestoPagoSendTxRequest.builder()
-                .upe(record.upe())
-                .idServicio(record.idServicio())
-                .idProducto(record.idProducto())
-                .idConcepto(record.idConcepto())
+                .upe(requestRecord.upe())
+                .idServicio(requestRecord.idServicio())
+                .idProducto(requestRecord.idProducto())
+                .idConcepto(requestRecord.idConcepto())
                 .idDistribuidor(distribuidorEfectivo)
-                .monto(record.monto())
-                .esRecargaTelefonica(record.bandera())
-                .telefono(record.telefono())
-                .referencia(record.referencia())
+                .monto(requestRecord.monto())
+                .esRecargaTelefonica(requestRecord.bandera())
+                .telefono(requestRecord.telefono())
+                .referencia(requestRecord.referencia())
                 .datosEncriptados(datosEncriptados)
                 .firma(firmaTransaccion)
                 .build();
@@ -205,16 +205,16 @@ public class PagoServicioServiceImpl implements PagoServicioService {
         String folioInicial = UUID.randomUUID().toString();
         PagoServicioEntity transaccion = PagoServicioEntity.builder()
                 .folioTransaccion(folioInicial)
-                .numCuenta(record.numCuenta())
-                .idServicio(record.idServicio())
-                .idProducto(record.idProducto())
-                .idConcepto(record.idConcepto())
+                .numCuenta(requestRecord.numCuenta())
+                .idServicio(requestRecord.idServicio())
+                .idProducto(requestRecord.idProducto())
+                .idConcepto(requestRecord.idConcepto())
                 .idDistribuidor(distribuidorEfectivo)
-                .monto(record.monto())
-                .upe(record.upe())
-                .esRecargaTelefonica(record.bandera())
-                .telefono(record.telefono())
-                .referencia(record.referencia())
+                .monto(requestRecord.monto())
+                .upe(requestRecord.upe())
+                .esRecargaTelefonica(requestRecord.bandera())
+                .telefono(requestRecord.telefono())
+                .referencia(requestRecord.referencia())
                 .estatus("PROCESANDO")
                 .fechaOperacion(LocalDateTime.now())
                 .build();
@@ -232,7 +232,7 @@ public class PagoServicioServiceImpl implements PagoServicioService {
             transaccion.setEstatus("EN_CONCILIACION");
             pagoServicioRepository.save(transaccion);
             log.warn("Transacción con UPE {} marcada EN_CONCILIACION ante timeout o fallo de red con GestoPago. Folio: {}",
-                    record.upe(), folioInicial);
+                    requestRecord.upe(), folioInicial);
             throw new ProveedorPagoException(
                     String.format("La comunicación con el proveedor externo entró en tiempo de espera. La transacción quedó EN_CONCILIACION con folio %s. No se descontó saldo. Consulte el estado de la UPE antes de reintentar.", folioInicial),
                     ex);
@@ -252,7 +252,7 @@ public class PagoServicioServiceImpl implements PagoServicioService {
 
         // Si retorna código 01 (Transacción Exitosa), en ese exacto instante se descuenta el saldo
         BigDecimal saldoAnterior = cuenta.getSaldo();
-        BigDecimal saldoActual = saldoAnterior.subtract(record.monto());
+        BigDecimal saldoActual = saldoAnterior.subtract(requestRecord.monto());
         cuenta.setSaldo(saldoActual);
         cuentaRepository.save(cuenta);
 
@@ -265,22 +265,22 @@ public class PagoServicioServiceImpl implements PagoServicioService {
         pagoServicioRepository.save(transaccion);
 
         log.info("Pago confirmado con código 01. Saldo debitado exitosamente. Cuenta: {}, Folio: {}, Nuevo Saldo: {}",
-                record.numCuenta(), folioFinal, saldoActual);
+                requestRecord.numCuenta(), folioFinal, saldoActual);
 
-        String tipoOperacion = Boolean.TRUE.equals(record.bandera()) ? TIPO_RECARGA : TIPO_SERVICIO;
-        String destinoPago = Boolean.TRUE.equals(record.bandera()) ? record.telefono() : record.referencia();
+        String tipoOperacion = Boolean.TRUE.equals(requestRecord.bandera()) ? TIPO_RECARGA : TIPO_SERVICIO;
+        String destinoPago = Boolean.TRUE.equals(requestRecord.bandera()) ? requestRecord.telefono() : requestRecord.referencia();
 
         return PagoServicioResponseDto.builder()
                 .folioTransaccion(folioFinal)
-                .numCuenta(record.numCuenta())
-                .idServicio(record.idServicio())
-                .idProducto(record.idProducto())
-                .idConcepto(record.idConcepto())
+                .numCuenta(requestRecord.numCuenta())
+                .idServicio(requestRecord.idServicio())
+                .idProducto(requestRecord.idProducto())
+                .idConcepto(requestRecord.idConcepto())
                 .idDistribuidor(distribuidorEfectivo)
-                .monto(record.monto())
+                .monto(requestRecord.monto())
                 .saldoAnterior(saldoAnterior)
                 .saldoActual(saldoActual)
-                .upe(record.upe())
+                .upe(requestRecord.upe())
                 .tipoOperacion(tipoOperacion)
                 .destinoPago(destinoPago)
                 .estatus(ESTATUS_APLICADO)

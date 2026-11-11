@@ -1,4 +1,4 @@
-package com.proyecto.servicios.service.Impl;
+package com.proyecto.servicios.service.impl;
 
 import com.proyecto.servicios.entity.cliente.ClienteEntity;
 import com.proyecto.servicios.entity.cliente.CuentaEntity;
@@ -39,6 +39,10 @@ import java.util.function.Predicate;
 @Slf4j
 @Service
 public class CuentaServiceImpl implements CuentaService {
+    private static final String ESTATUS_ACTIVA = "ACTIVA";
+    private static final String ESTATUS_CANCELADA = "CANCELADA";
+    private static final String MSG_CUENTA_NO_ENCONTRADA = "Cuenta bancaria no encontrada con número ";
+
 
     private final CuentaRepository cuentaRepository;
     private final ClienteRepository clienteRepository;
@@ -91,7 +95,7 @@ public class CuentaServiceImpl implements CuentaService {
                 .tipoCuenta(tipoCuenta)
                 .saldo(saldoInicial)
                 .moneda(moneda)
-                .estatus("ACTIVA")
+                .estatus(ESTATUS_ACTIVA)
                 .build();
 
         CuentaEntity cuentaGuardada = cuentaRepository.save(cuenta);
@@ -105,7 +109,7 @@ public class CuentaServiceImpl implements CuentaService {
     public CuentaBancariaDto obtenerCuentaPorNumero(String numeroCuenta) {
         String cuentaLimpia = numeroCuenta.trim();
         CuentaEntity cuenta = cuentaRepository.findByNumeroCuenta(cuentaLimpia)
-                .orElseThrow(() -> new CuentaNoEncontradaException("Cuenta bancaria no encontrada con número " + cuentaLimpia));
+                .orElseThrow(() -> new CuentaNoEncontradaException(MSG_CUENTA_NO_ENCONTRADA + cuentaLimpia));
 
         return mapearCuentaADto(cuenta);
     }
@@ -135,7 +139,7 @@ public class CuentaServiceImpl implements CuentaService {
 
             Optional.ofNullable(filtro.soloActivas())
                     .filter(Boolean::booleanValue)
-                    .map(act -> cb.equal(cb.upper(root.get("estatus")), "ACTIVA"))
+                    .map(act -> cb.equal(cb.upper(root.get("estatus")), ESTATUS_ACTIVA))
                     .ifPresent(predicates::add);
 
             return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
@@ -171,24 +175,24 @@ public class CuentaServiceImpl implements CuentaService {
 
         String cuentaLimpia = numeroCuenta.trim();
         CuentaEntity cuenta = cuentaRepository.findByNumeroCuenta(cuentaLimpia)
-                .orElseThrow(() -> new CuentaNoEncontradaException("Cuenta bancaria no encontrada con número " + cuentaLimpia));
+                .orElseThrow(() -> new CuentaNoEncontradaException(MSG_CUENTA_NO_ENCONTRADA + cuentaLimpia));
 
         // Reglas de negocio declarativas
         DeclarativeAssertUtil.asegurar(Boolean.TRUE.equals(cuenta.getCliente().getActivo()),
                 "No se puede modificar una cuenta bancaria perteneciente a un cliente inactivo");
 
-        DeclarativeAssertUtil.prohibir("CANCELADA".equalsIgnoreCase(cuenta.getEstatus()),
+        DeclarativeAssertUtil.prohibir(ESTATUS_CANCELADA.equalsIgnoreCase(cuenta.getEstatus()),
                 "No se puede modificar una cuenta bancaria en estatus CANCELADA");
 
         DeclarativeAssertUtil.prohibir("INACTIVA".equalsIgnoreCase(cuenta.getEstatus())
-                        && (dto.getEstatus() == null || !"ACTIVA".equalsIgnoreCase(dto.getEstatus())),
+                        && (dto.getEstatus() == null || !ESTATUS_ACTIVA.equalsIgnoreCase(dto.getEstatus())),
                 "No se puede modificar una cuenta inactiva sin reactivarla primero a estatus ACTIVA");
 
         Optional.ofNullable(dto.getEstatus())
                 .filter(Predicate.not(String::isBlank))
                 .ifPresent(est -> {
                     Optional.of(est)
-                            .filter("ACTIVA"::equalsIgnoreCase)
+                            .filter(ESTATUS_ACTIVA::equalsIgnoreCase)
                             .ifPresent(a -> DeclarativeAssertUtil.asegurar(Boolean.TRUE.equals(cuenta.getCliente().getActivo()),
                                     "Solo los clientes activos pueden tener cuentas activas"));
                     cuenta.setEstatus(est.toUpperCase());
@@ -223,12 +227,12 @@ public class CuentaServiceImpl implements CuentaService {
     public void desactivarCuenta(String numeroCuenta) {
         String cuentaLimpia = numeroCuenta.trim();
         CuentaEntity cuenta = cuentaRepository.findByNumeroCuenta(cuentaLimpia)
-                .orElseThrow(() -> new CuentaNoEncontradaException("Cuenta bancaria no encontrada con número " + cuentaLimpia));
+                .orElseThrow(() -> new CuentaNoEncontradaException(MSG_CUENTA_NO_ENCONTRADA + cuentaLimpia));
 
-        DeclarativeAssertUtil.prohibir("CANCELADA".equalsIgnoreCase(cuenta.getEstatus()),
+        DeclarativeAssertUtil.prohibir(ESTATUS_CANCELADA.equalsIgnoreCase(cuenta.getEstatus()),
                 () -> new ReglaNegocioException("La cuenta bancaria " + cuentaLimpia + " ya se encuentra cancelada"));
 
-        cuenta.setEstatus("CANCELADA");
+        cuenta.setEstatus(ESTATUS_CANCELADA);
         cuentaRepository.save(cuenta);
         log.info("Cuenta bancaria {} dada de baja lógicamente con estatus CANCELADA", cuentaLimpia);
     }
@@ -238,15 +242,15 @@ public class CuentaServiceImpl implements CuentaService {
     public CuentaBancariaDto reactivarCuenta(String numeroCuenta) {
         String cuentaLimpia = numeroCuenta.trim();
         CuentaEntity cuenta = cuentaRepository.findByNumeroCuenta(cuentaLimpia)
-                .orElseThrow(() -> new CuentaNoEncontradaException("Cuenta bancaria no encontrada con número " + cuentaLimpia));
+                .orElseThrow(() -> new CuentaNoEncontradaException(MSG_CUENTA_NO_ENCONTRADA + cuentaLimpia));
 
         DeclarativeAssertUtil.asegurar(Boolean.TRUE.equals(cuenta.getCliente().getActivo()),
                 "No se puede reactivar una cuenta perteneciente a un cliente inactivo");
 
-        DeclarativeAssertUtil.prohibir("ACTIVA".equalsIgnoreCase(cuenta.getEstatus()),
+        DeclarativeAssertUtil.prohibir(ESTATUS_ACTIVA.equalsIgnoreCase(cuenta.getEstatus()),
                 () -> new ReglaNegocioException("La cuenta bancaria " + cuentaLimpia + " ya se encuentra activa"));
 
-        cuenta.setEstatus("ACTIVA");
+        cuenta.setEstatus(ESTATUS_ACTIVA);
         CuentaEntity guardada = cuentaRepository.save(cuenta);
         log.info("Cuenta bancaria {} reactivada exitosamente a estatus ACTIVA", cuentaLimpia);
         return mapearCuentaADto(guardada);

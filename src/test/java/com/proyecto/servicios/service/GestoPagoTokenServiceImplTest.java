@@ -5,7 +5,7 @@ import com.proyecto.servicios.entity.gestopago.GestoPagoToken;
 import com.proyecto.servicios.mapper.GestoPagoTokenMapper;
 import com.proyecto.servicios.model.gestopago.GestoPagoAuthResponse;
 import com.proyecto.servicios.repositorys.gestopago.GestoPagoTokenRepository;
-import com.proyecto.servicios.service.Impl.GestoPagoTokenServiceImpl;
+import com.proyecto.servicios.service.impl.GestoPagoTokenServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

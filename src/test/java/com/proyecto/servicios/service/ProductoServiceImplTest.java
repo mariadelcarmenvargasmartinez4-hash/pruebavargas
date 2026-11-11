@@ -11,7 +11,7 @@ import com.proyecto.servicios.model.producto.ProductoItemDto;
 import com.proyecto.servicios.model.producto.ProductoResponseDto;
 import com.proyecto.servicios.model.producto.ProductosWrapperDto;
 import com.proyecto.servicios.repositorys.mongo.ProductoMongoRepository;
-import com.proyecto.servicios.service.Impl.ProductoServiceImpl;
+import com.proyecto.servicios.service.impl.ProductoServiceImpl;
 import com.proyecto.servicios.util.ProductoXmlParser;
 import feign.FeignException;
 import feign.Request;

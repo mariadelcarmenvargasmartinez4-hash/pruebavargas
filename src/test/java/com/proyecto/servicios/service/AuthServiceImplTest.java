@@ -7,7 +7,7 @@ import com.proyecto.servicios.exception.UsuarioInactivoException;
 import com.proyecto.servicios.model.auth.LoginRequestDto;
 import com.proyecto.servicios.model.auth.LoginResponseDto;
 import com.proyecto.servicios.repositorys.cliente.UsuarioAccesoRepository;
-import com.proyecto.servicios.service.Impl.AuthServiceImpl;
+import com.proyecto.servicios.service.impl.AuthServiceImpl;
 import com.proyecto.servicios.util.ClienteTestDataBuilder;
 import com.proyecto.servicios.util.JwtUtil;
 import com.proyecto.servicios.util.TestCredentials;

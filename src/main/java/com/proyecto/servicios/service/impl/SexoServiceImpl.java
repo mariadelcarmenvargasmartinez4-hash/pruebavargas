@@ -1,6 +1,6 @@
-package com.proyecto.servicios.service.Impl;
+package com.proyecto.servicios.service.impl;
 
-import com.proyecto.servicios.entity.catalogo.NacionalidadEntity;
+import com.proyecto.servicios.entity.catalogo.SexoEntity;
 import com.proyecto.servicios.exception.CatalogoDuplicadoException;
 import com.proyecto.servicios.exception.CatalogoNoEncontradoException;
 import com.proyecto.servicios.model.catalogo.CatalogoActualizacionDto;
@@ -8,8 +8,8 @@ import com.proyecto.servicios.model.catalogo.CatalogoConsultaFiltroRecord;
 import com.proyecto.servicios.model.catalogo.CatalogoCreacionDto;
 import com.proyecto.servicios.model.catalogo.CatalogoItemDto;
 import com.proyecto.servicios.model.common.PaginaResponseRecord;
-import com.proyecto.servicios.repositorys.catalogo.NacionalidadRepository;
-import com.proyecto.servicios.service.NacionalidadService;
+import com.proyecto.servicios.repositorys.catalogo.SexoRepository;
+import com.proyecto.servicios.service.SexoService;
 import com.proyecto.servicios.util.DeclarativeAssertUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -29,12 +29,14 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @Service
-public class NacionalidadServiceImpl implements NacionalidadService {
+public class SexoServiceImpl implements SexoService {
+    private static final String MSG_SEXO_NO_ENCONTRADO = "Elemento de sexo no encontrado con ID ";
 
-    private final NacionalidadRepository nacionalidadRepository;
 
-    public NacionalidadServiceImpl(NacionalidadRepository nacionalidadRepository) {
-        this.nacionalidadRepository = nacionalidadRepository;
+    private final SexoRepository sexoRepository;
+
+    public SexoServiceImpl(SexoRepository sexoRepository) {
+        this.sexoRepository = sexoRepository;
     }
 
     @Override
@@ -43,7 +45,7 @@ public class NacionalidadServiceImpl implements NacionalidadService {
         Sort sort = Sort.by(Sort.Direction.fromString(filtro.sortDir()), filtro.sortBy());
         Pageable pageable = PageRequest.of(filtro.page(), filtro.size(), sort);
 
-        Specification<NacionalidadEntity> spec = (root, query, cb) -> {
+        Specification<SexoEntity> spec = (root, query, cb) -> {
             List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
 
             Optional.ofNullable(filtro.soloActivos())
@@ -61,14 +63,14 @@ public class NacionalidadServiceImpl implements NacionalidadService {
             return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
         };
 
-        Page<CatalogoItemDto> page = nacionalidadRepository.findAll(spec, pageable).map(this::mapearADto);
+        Page<CatalogoItemDto> page = sexoRepository.findAll(spec, pageable).map(this::mapearADto);
         return PaginaResponseRecord.de(page);
     }
 
     @Override
     @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
     public List<CatalogoItemDto> listarTodos() {
-        return nacionalidadRepository.findAll().stream()
+        return sexoRepository.findAll().stream()
                 .map(this::mapearADto)
                 .collect(Collectors.toList());
     }
@@ -76,7 +78,7 @@ public class NacionalidadServiceImpl implements NacionalidadService {
     @Override
     @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
     public List<CatalogoItemDto> listarActivos() {
-        return nacionalidadRepository.findByActivoTrue().stream()
+        return sexoRepository.findByActivoTrue().stream()
                 .map(this::mapearADto)
                 .collect(Collectors.toList());
     }
@@ -84,19 +86,19 @@ public class NacionalidadServiceImpl implements NacionalidadService {
     @Override
     @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
     public CatalogoItemDto obtenerPorId(Long id) {
-        return nacionalidadRepository.findById(id)
+        return sexoRepository.findById(id)
                 .map(this::mapearADto)
-                .orElseThrow(() -> new CatalogoNoEncontradoException("Elemento de nacionalidad no encontrado con ID " + id));
+                .orElseThrow(() -> new CatalogoNoEncontradoException(MSG_SEXO_NO_ENCONTRADO + id));
     }
 
     @Override
     @Transactional(readOnly = true, transactionManager = "sfTransactionManager")
     public CatalogoItemDto obtenerPorCodigoODescripcion(String valor) {
         String limpio = valor.trim().toUpperCase();
-        return nacionalidadRepository.findByCodigoIgnoreCase(limpio)
-                .or(() -> nacionalidadRepository.findByDescripcionIgnoreCase(limpio))
+        return sexoRepository.findByCodigoIgnoreCase(limpio)
+                .or(() -> sexoRepository.findByDescripcionIgnoreCase(limpio))
                 .map(this::mapearADto)
-                .orElseThrow(() -> new CatalogoNoEncontradoException("Nacionalidad no encontrada para el valor '" + valor + "'"));
+                .orElseThrow(() -> new CatalogoNoEncontradoException("Sexo no encontrado para el valor '" + valor + "'"));
     }
 
     @Override
@@ -106,51 +108,51 @@ public class NacionalidadServiceImpl implements NacionalidadService {
         String codigo = dto.getCodigo().trim().toUpperCase();
         String descripcion = dto.getDescripcion().trim().toUpperCase();
 
-        DeclarativeAssertUtil.prohibir(nacionalidadRepository.existsByCodigoIgnoreCase(codigo),
-                () -> new CatalogoDuplicadoException("El código de nacionalidad '" + codigo + "' ya está registrado"));
+        DeclarativeAssertUtil.prohibir(sexoRepository.existsByCodigoIgnoreCase(codigo),
+                () -> new CatalogoDuplicadoException("El código de sexo '" + codigo + "' ya está registrado"));
 
-        DeclarativeAssertUtil.prohibir(nacionalidadRepository.existsByDescripcionIgnoreCase(descripcion),
-                () -> new CatalogoDuplicadoException("La descripción de nacionalidad '" + descripcion + "' ya está registrada"));
+        DeclarativeAssertUtil.prohibir(sexoRepository.existsByDescripcionIgnoreCase(descripcion),
+                () -> new CatalogoDuplicadoException("La descripción de sexo '" + descripcion + "' ya está registrada"));
 
-        NacionalidadEntity entidad = NacionalidadEntity.builder()
+        SexoEntity entidad = SexoEntity.builder()
                 .codigo(codigo)
                 .descripcion(descripcion)
                 .activo(true)
                 .fechaCreacion(LocalDateTime.now())
                 .build();
 
-        return mapearADto(nacionalidadRepository.save(entidad));
+        return mapearADto(sexoRepository.save(entidad));
     }
 
     @Override
     @Transactional(transactionManager = "sfTransactionManager")
     public CatalogoItemDto actualizar(Long id, CatalogoActualizacionDto dto) {
         dto.toRecord(); // Validación temprana Fail-Fast en Record
-        NacionalidadEntity entidad = nacionalidadRepository.findById(id)
-                .orElseThrow(() -> new CatalogoNoEncontradoException("Elemento de nacionalidad no encontrado con ID " + id));
+        SexoEntity entidad = sexoRepository.findById(id)
+                .orElseThrow(() -> new CatalogoNoEncontradoException(MSG_SEXO_NO_ENCONTRADO + id));
 
         Optional.ofNullable(dto.getDescripcion())
                 .map(String::trim)
                 .filter(Predicate.not(String::isBlank))
                 .ifPresent(desc -> {
                     String descUpper = desc.toUpperCase();
-                    DeclarativeAssertUtil.prohibir(!descUpper.equalsIgnoreCase(entidad.getDescripcion()) && nacionalidadRepository.existsByDescripcionIgnoreCase(descUpper),
+                    DeclarativeAssertUtil.prohibir(!descUpper.equalsIgnoreCase(entidad.getDescripcion()) && sexoRepository.existsByDescripcionIgnoreCase(descUpper),
                             () -> new CatalogoDuplicadoException("La descripción '" + descUpper + "' ya pertenece a otro registro"));
                     entidad.setDescripcion(descUpper);
                 });
 
         Optional.ofNullable(dto.getActivo()).ifPresent(entidad::setActivo);
 
-        return mapearADto(nacionalidadRepository.save(entidad));
+        return mapearADto(sexoRepository.save(entidad));
     }
 
     @Override
     @Transactional(transactionManager = "sfTransactionManager")
     public void desactivar(Long id) {
-        NacionalidadEntity entidad = nacionalidadRepository.findById(id)
-                .orElseThrow(() -> new CatalogoNoEncontradoException("Elemento de nacionalidad no encontrado con ID " + id));
+        SexoEntity entidad = sexoRepository.findById(id)
+                .orElseThrow(() -> new CatalogoNoEncontradoException(MSG_SEXO_NO_ENCONTRADO + id));
         entidad.setActivo(false);
-        nacionalidadRepository.save(entidad);
+        sexoRepository.save(entidad);
     }
 
     @Override
@@ -160,12 +162,12 @@ public class NacionalidadServiceImpl implements NacionalidadService {
                 .map(String::trim)
                 .filter(Predicate.not(String::isBlank))
                 .map(String::toUpperCase)
-                .map(limpio -> nacionalidadRepository.existsByCodigoIgnoreCaseAndActivoTrue(limpio)
-                        || nacionalidadRepository.existsByDescripcionIgnoreCaseAndActivoTrue(limpio))
+                .map(limpio -> sexoRepository.existsByCodigoIgnoreCaseAndActivoTrue(limpio)
+                        || sexoRepository.existsByDescripcionIgnoreCaseAndActivoTrue(limpio))
                 .orElse(false);
     }
 
-    private CatalogoItemDto mapearADto(NacionalidadEntity entity) {
+    private CatalogoItemDto mapearADto(SexoEntity entity) {
         return CatalogoItemDto.builder()
                 .id(entity.getId())
                 .codigo(entity.getCodigo())
