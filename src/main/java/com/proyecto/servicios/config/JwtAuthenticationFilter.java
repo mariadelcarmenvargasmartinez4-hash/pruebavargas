@@ -61,9 +61,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
                 usuarioRepository.findByUsername(username)
                         .filter(usuario -> Boolean.TRUE.equals(usuario.getActivo()))
-                        .ifPresent(usuario -> SecurityContextHolder.getContext().setAuthentication(
-                                new UsernamePasswordAuthenticationToken(
-                                        username, null, AuthorityUtils.createAuthorityList("ROLE_" + usuario.getRol()))));
+                        .ifPresent(usuario -> {
+                            String rolRaw = Optional.ofNullable(usuario.getRol()).filter(r -> !r.isBlank()).orElse("CLIENTE");
+                            String authority = rolRaw.startsWith("ROLE_") ? rolRaw : "ROLE_" + rolRaw;
+                            SecurityContextHolder.getContext().setAuthentication(
+                                    new UsernamePasswordAuthenticationToken(
+                                            username, null, AuthorityUtils.createAuthorityList(authority)));
+                        });
             }
         }
 

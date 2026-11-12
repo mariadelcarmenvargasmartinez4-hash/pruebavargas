@@ -19,6 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class UserSessionService {
 
+    private static final long TIEMPO_INACTIVIDAD_MINUTOS = 60;
     private final Map<String, SesionUsuarioDto> activeSessions = new ConcurrentHashMap<>();
 
     /**
@@ -39,6 +40,7 @@ public class UserSessionService {
 
         SesionUsuarioDto sesionAnterior = activeSessions.get(userKey);
         if (sesionAnterior != null && Boolean.TRUE.equals(sesionAnterior.getActiva())) {
+            sesionAnterior.setActiva(false);
             log.warn("Control de sesión única: Se invalida la sesión activa previa '{}' de usuario '{}' (desde {}) debido a nuevo ingreso desde '{}' (IP: {})",
                     sesionAnterior.getSessionId(), username, sesionAnterior.getDispositivo(), dispLimpio, ipAddress);
         }
@@ -69,6 +71,15 @@ public class UserSessionService {
         SesionUsuarioDto sesion = activeSessions.get(username.trim().toLowerCase());
         if (sesion == null || !Boolean.TRUE.equals(sesion.getActiva())) {
             log.debug("Sesión rechazada: No existe sesión activa en servidor para usuario '{}'", username);
+            return false;
+        }
+
+        if (sesion.getUltimoAcceso() != null &&
+                sesion.getUltimoAcceso().plusMinutes(TIEMPO_INACTIVIDAD_MINUTOS).isBefore(LocalDateTime.now())) {
+            log.warn("Sesión expirada por inactividad (> {} min) para usuario '{}' [SessionId: {}]",
+                    TIEMPO_INACTIVIDAD_MINUTOS, username, sessionId);
+            sesion.setActiva(false);
+            activeSessions.remove(username.trim().toLowerCase());
             return false;
         }
 

@@ -7,6 +7,9 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
@@ -25,13 +28,21 @@ public class TwoFactorAuthService {
 
     private static final int MAX_INTENTOS = 3;
     private static final long EXPIRACION_MINUTOS = 5;
+    private static final long COOLDOWN_SEGUNDOS = 60;
 
     private final PasswordEncoder passwordEncoder;
     private final SecureRandom secureRandom = new SecureRandom();
     private final Map<String, TwoFactorPinEntry> activeCodes = new ConcurrentHashMap<>();
 
+    @Autowired(required = false)
+    private JavaMailSender mailSender;
+
     public TwoFactorAuthService(PasswordEncoder passwordEncoder) {
         this.passwordEncoder = passwordEncoder;
+    }
+
+    public void setMailSender(JavaMailSender mailSender) {
+        this.mailSender = mailSender;
     }
 
     /**
@@ -51,12 +62,20 @@ public class TwoFactorAuthService {
         String pinPlano = String.valueOf(pinNumero);
 
         LocalDateTime ahora = LocalDateTime.now();
+
+        // Protección contra solicitudes excesivas (anti-flooding / rate-limiting 60s)
+        TwoFactorPinEntry entryExistente = activeCodes.get(userKey);
+        if (entryExistente != null && entryExistente.getFechaCreacion().plusSeconds(COOLDOWN_SEGUNDOS).isAfter(ahora)) {
+            long segundosRestantes = ChronoUnit.SECONDS.between(ahora, entryExistente.getFechaCreacion().plusSeconds(COOLDOWN_SEGUNDOS));
+            throw new ReglaNegocioException("Debe esperar " + Math.max(1, segundosRestantes) + " segundos antes de solicitar un nuevo código de verificación 2FA.");
+        }
+
         LocalDateTime expiracion = ahora.plus(EXPIRACION_MINUTOS, ChronoUnit.MINUTES);
 
-        TwoFactorPinEntry entry = new TwoFactorPinEntry(passwordEncoder.encode(pinPlano), expiracion);
+        TwoFactorPinEntry entry = new TwoFactorPinEntry(passwordEncoder.encode(pinPlano), ahora, expiracion);
         activeCodes.put(userKey, entry);
 
-        log.info("Código 2FA generado para el usuario '{}'. Expira en {} minutos", username, EXPIRACION_MINUTOS);
+        despacharCodigoSeguro(username, pinPlano);
         return pinPlano;
     }
 
@@ -110,15 +129,36 @@ public class TwoFactorAuthService {
         return EXPIRACION_MINUTOS * 60;
     }
 
+    private void despacharCodigoSeguro(String destinatario, String codigo) {
+        if (mailSender == null) {
+            log.info("Canal SMTP no configurado: El código 2FA para '{}' es [{}] (Modo desarrollo). Expira en {} minutos",
+                    destinatario, codigo, EXPIRACION_MINUTOS);
+            return;
+        }
+        try {
+            SimpleMailMessage mensaje = new SimpleMailMessage();
+            mensaje.setTo(destinatario);
+            mensaje.setSubject("Código de Seguridad 2FA - Banca Digital");
+            mensaje.setText("Tu código de verificación temporal es: " + codigo +
+                    "\n\nVálido durante " + EXPIRACION_MINUTOS + " minutos. No compartas este código con nadie por seguridad.");
+            mailSender.send(mensaje);
+            log.info("Código 2FA enviado por correo electrónico a '{}'", destinatario);
+        } catch (Exception e) {
+            log.warn("No fue posible despachar el correo 2FA a '{}': {}. Código local: [{}]", destinatario, e.getMessage(), codigo);
+        }
+    }
+
     @Getter
     @Setter
     private static class TwoFactorPinEntry {
         private final String pinHash;
+        private final LocalDateTime fechaCreacion;
         private final LocalDateTime expiracion;
         private int intentos;
 
-        public TwoFactorPinEntry(String pinHash, LocalDateTime expiracion) {
+        public TwoFactorPinEntry(String pinHash, LocalDateTime fechaCreacion, LocalDateTime expiracion) {
             this.pinHash = pinHash;
+            this.fechaCreacion = fechaCreacion;
             this.expiracion = expiracion;
             this.intentos = 0;
         }

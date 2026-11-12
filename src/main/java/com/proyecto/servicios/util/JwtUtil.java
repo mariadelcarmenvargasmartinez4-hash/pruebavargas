@@ -14,6 +14,8 @@ import org.springframework.stereotype.Component;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.UUID;
 
 // Utileria para generacion y validacion de tokens JWT firmados
@@ -95,9 +97,16 @@ public class JwtUtil {
                 .getBody();
     }
 
-    // Obtiene la clave de firma a partir del secret
+    // Obtiene la clave de firma a partir del secret con blindaje de longitud minima
     private SecretKey getSigningKey() {
-        byte[] keyBytes = secretKey.getBytes(StandardCharsets.UTF_8);
+        byte[] keyBytes = (secretKey != null ? secretKey : "defaultFallbackSecretKeyWithAtLeast32BytesLength!").getBytes(StandardCharsets.UTF_8);
+        if (keyBytes.length < 32) {
+            try {
+                keyBytes = MessageDigest.getInstance("SHA-256").digest(keyBytes);
+            } catch (NoSuchAlgorithmException e) {
+                log.error("Error derivando clave HMAC-SHA256 para JWT", e);
+            }
+        }
         return Keys.hmacShaKeyFor(keyBytes);
     }
 }
