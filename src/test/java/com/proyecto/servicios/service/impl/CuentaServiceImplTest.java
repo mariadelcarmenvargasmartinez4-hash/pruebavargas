@@ -14,8 +14,6 @@ import com.proyecto.servicios.model.cuenta.SaldoCuentaDto;
 import com.proyecto.servicios.repositorys.cliente.ClienteRepository;
 import com.proyecto.servicios.repositorys.cliente.CuentaRepository;
 import com.proyecto.servicios.service.impl.CuentaServiceImpl;
-import com.proyecto.servicios.util.ClienteTestDataBuilder;
-import com.proyecto.servicios.util.CuentaTestDataBuilder;
 import com.proyecto.servicios.util.GeneradorCuentaBancariaUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

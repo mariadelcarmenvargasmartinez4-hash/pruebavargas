@@ -21,8 +21,6 @@ import com.proyecto.servicios.repositorys.mongo.ProductoMongoRepository;
 import com.proyecto.servicios.repositorys.pago.PagoServicioRepository;
 import com.proyecto.servicios.service.impl.PagoServicioServiceImpl;
 import com.proyecto.servicios.util.AesEncryptionUtil;
-import com.proyecto.servicios.util.PagoTestDataBuilder;
-import com.proyecto.servicios.util.TestCredentials;
 import feign.FeignException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

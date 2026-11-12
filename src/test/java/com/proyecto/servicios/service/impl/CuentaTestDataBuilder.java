@@ -1,4 +1,4 @@
-package com.proyecto.servicios.util;
+package com.proyecto.servicios.service.impl;
 
 import com.proyecto.servicios.entity.cliente.ClienteEntity;
 import com.proyecto.servicios.entity.cliente.CuentaEntity;
