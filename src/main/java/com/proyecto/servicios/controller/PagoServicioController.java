@@ -18,6 +18,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import com.proyecto.servicios.security.SecurityService;
+import io.swagger.v3.oas.annotations.Parameter;
+import org.springframework.web.bind.annotation.PathVariable;
+import java.util.List;
 
 /**
  * Controlador REST para la recepción, procesamiento y conciliación de pagos de servicios y recargas telefónicas.
@@ -34,9 +38,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class PagoServicioController {
 
     private final PagoServicioService pagoServicioService;
+    private final SecurityService securityService;
 
-    public PagoServicioController(PagoServicioService pagoServicioService) {
+    public PagoServicioController(PagoServicioService pagoServicioService, SecurityService securityService) {
         this.pagoServicioService = pagoServicioService;
+        this.securityService = securityService;
     }
 
     @GetMapping(produces = MediaType.APPLICATION_JSON_VALUE)
@@ -74,5 +80,21 @@ public class PagoServicioController {
             @Valid @RequestBody PagoConciliacionRequestDto request) {
         PagoServicioResponseDto respuesta = pagoServicioService.consultarOConciliarPago(request);
         return ResponseEntity.ok(GenericResponse.exito(respuesta, "Consulta de conciliación procesada exitosamente"));
+    }
+
+    @GetMapping(value = "/historial/{numCuenta}", produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "Consultar historial de transacciones de una cuenta",
+               description = "Obtiene el historial cronológico de compras, pagos y recargas aplicadas a la cuenta bancaria con validación IDOR.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Historial consultado exitosamente"),
+            @ApiResponse(responseCode = "403", description = "Acceso denegado a transacciones de cuentas ajenas"),
+            @ApiResponse(responseCode = "404", description = "Cuenta bancaria no encontrada")
+    })
+    public ResponseEntity<GenericResponse<List<PagoServicioResponseDto>>> obtenerHistorialPorCuenta(
+            @Parameter(description = "Número de cuenta bancaria", example = "1234567890123456")
+            @PathVariable String numCuenta) {
+        securityService.validarAccesoCuenta(numCuenta);
+        List<PagoServicioResponseDto> historial = pagoServicioService.obtenerHistorialPorCuenta(numCuenta);
+        return ResponseEntity.ok(GenericResponse.exito(historial, "Historial de transacciones obtenido exitosamente"));
     }
 }

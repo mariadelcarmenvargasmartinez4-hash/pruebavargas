@@ -35,7 +35,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Locale;
+import java.util.stream.Collectors;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -285,6 +287,46 @@ public class PagoServicioServiceImpl implements PagoServicioService {
                 .destinoPago(destinoPago)
                 .estatus(ESTATUS_APLICADO)
                 .mensaje("Pago aplicado exitosamente con código 01 del proveedor")
+                .fechaOperacion(transaccion.getFechaOperacion())
+                .build();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PagoServicioResponseDto> obtenerHistorialPorCuenta(String numCuenta) {
+        DeclarativeAssertUtil.asegurar(
+                numCuenta != null && !numCuenta.isBlank(),
+                () -> new ReglaNegocioException("El número de cuenta es requerido para consultar el historial de pagos"));
+
+        return pagoServicioRepository.findByNumCuenta(numCuenta.trim())
+                .stream()
+                .sorted((t1, t2) -> {
+                    if (t1.getFechaOperacion() == null || t2.getFechaOperacion() == null) {
+                        return 0;
+                    }
+                    return t2.getFechaOperacion().compareTo(t1.getFechaOperacion());
+                })
+                .map(this::mapearTransaccionAResponse)
+                .collect(Collectors.toList());
+    }
+
+    private PagoServicioResponseDto mapearTransaccionAResponse(PagoServicioEntity transaccion) {
+        String tipoOperacion = Boolean.TRUE.equals(transaccion.getEsRecargaTelefonica()) ? TIPO_RECARGA : TIPO_SERVICIO;
+        String destinoPago = Boolean.TRUE.equals(transaccion.getEsRecargaTelefonica()) ? transaccion.getTelefono() : transaccion.getReferencia();
+
+        return PagoServicioResponseDto.builder()
+                .folioTransaccion(transaccion.getFolioTransaccion())
+                .numCuenta(transaccion.getNumCuenta())
+                .idServicio(transaccion.getIdServicio())
+                .idProducto(transaccion.getIdProducto())
+                .idConcepto(transaccion.getIdConcepto())
+                .idDistribuidor(transaccion.getIdDistribuidor())
+                .monto(transaccion.getMonto())
+                .upe(transaccion.getUpe())
+                .tipoOperacion(tipoOperacion)
+                .destinoPago(destinoPago)
+                .estatus(transaccion.getEstatus())
+                .mensaje("Transacción registrada: " + transaccion.getEstatus())
                 .fechaOperacion(transaccion.getFechaOperacion())
                 .build();
     }

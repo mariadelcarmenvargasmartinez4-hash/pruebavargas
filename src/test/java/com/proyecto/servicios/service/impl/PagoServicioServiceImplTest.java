@@ -36,6 +36,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -733,5 +734,66 @@ class PagoServicioServiceImplTest {
         assertEquals("APLICADO", res.getEstatus());
         assertEquals("PAGO_SERVICIO_REFERENCIA", res.getTipoOperacion());
         assertEquals("REF-CFE-999", res.getDestinoPago());
+    }
+
+
+    @Test
+    @DisplayName("obtenerHistorialPorCuenta: Retorna transacciones ordenadas cronológicamente descendente")
+    void obtenerHistorialPorCuenta_Exitoso() {
+        String numCuenta = "1234567890123456";
+
+        PagoServicioEntity tx1 = PagoServicioEntity.builder()
+                .upe("1111111111")
+                .folioTransaccion("FOL-001")
+                .numCuenta(numCuenta)
+                .idServicio(1L)
+                .idProducto(101L)
+                .monto(new BigDecimal("100.00"))
+                .esRecargaTelefonica(true)
+                .telefono("5511112222")
+                .estatus("APLICADO")
+                .fechaOperacion(LocalDateTime.now().minusDays(1))
+                .build();
+
+        PagoServicioEntity tx2 = PagoServicioEntity.builder()
+                .upe("2222222222")
+                .folioTransaccion("FOL-002")
+                .numCuenta(numCuenta)
+                .idServicio(2L)
+                .idProducto(201L)
+                .monto(new BigDecimal("200.00"))
+                .esRecargaTelefonica(false)
+                .referencia("REF-CFE-002")
+                .estatus("APLICADO")
+                .fechaOperacion(LocalDateTime.now())
+                .build();
+
+        when(pagoServicioRepository.findByNumCuenta(numCuenta)).thenReturn(List.of(tx1, tx2));
+
+        List<PagoServicioResponseDto> historial = pagoServicioService.obtenerHistorialPorCuenta(numCuenta);
+
+        assertNotNull(historial);
+        assertEquals(2, historial.size());
+        assertEquals("FOL-002", historial.get(0).getFolioTransaccion()); // El más reciente primero
+        assertEquals("FOL-001", historial.get(1).getFolioTransaccion());
+    }
+
+    @Test
+    @DisplayName("obtenerHistorialPorCuenta: Cuenta nula o en blanco lanza ReglaNegocioException")
+    void obtenerHistorialPorCuenta_CuentaVacia_LanzaExcepcion() {
+        assertThrows(com.proyecto.servicios.exception.ReglaNegocioException.class,
+                () -> pagoServicioService.obtenerHistorialPorCuenta("   "));
+    }
+
+    @Test
+    @DisplayName("obtenerHistorialPorCuenta: Sin movimientos retorna lista vacía")
+    void obtenerHistorialPorCuenta_SinMovimientos_RetornaVacio() {
+        String numCuenta = "9999888877776666";
+        when(pagoServicioRepository.findByNumCuenta(numCuenta)).thenReturn(List.of());
+
+        List<PagoServicioResponseDto> historial = pagoServicioService.obtenerHistorialPorCuenta(numCuenta);
+
+        assertNotNull(historial);
+        assertTrue(historial.isEmpty());
     }
 }

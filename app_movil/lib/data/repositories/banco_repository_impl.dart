@@ -1,9 +1,11 @@
 import '../../domain/entities/cuenta.dart';
 import '../../domain/entities/producto.dart';
+import '../../domain/entities/transaccion.dart';
 import '../../domain/repositories/banco_repository.dart';
 import '../datasources/banco_remote_datasource.dart';
 import '../models/cuenta_model.dart';
 import '../models/producto_model.dart';
+import '../models/transaccion_model.dart';
 
 class BancoRepositoryImpl implements BancoRepository {
   final BancoRemoteDataSource remoteDataSource;
@@ -49,5 +51,11 @@ class BancoRepositoryImpl implements BancoRepository {
       'bandera': true,
     };
     return await remoteDataSource.procesarPago(payload);
+  }
+
+  @override
+  Future<List<Transaccion>> getHistorial(String numCuenta) async {
+    final list = await remoteDataSource.getHistorial(numCuenta);
+    return list.map((item) => TransaccionModel.fromJson(item as Map<String, dynamic>)).toList();
   }
 }

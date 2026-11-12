@@ -30,8 +30,17 @@ class BancoRemoteDataSource {
   Future<List<dynamic>> getProductos() async {
     final response = await apiClient.dio.get(ApiConstants.productos);
     final data = response.data;
-    if (data is Map && data.containsKey('datos')) {
-      return data['datos'] as List<dynamic>;
+    if (data is Map) {
+      if (data.containsKey('productos')) {
+        return data['productos'] as List<dynamic>;
+      }
+      if (data.containsKey('datos')) {
+        final d = data['datos'];
+        if (d is List) return d;
+        if (d is Map && d.containsKey('contenido')) {
+          return d['contenido'] as List<dynamic>;
+        }
+      }
     }
     if (data is List) return data;
     return [];
@@ -43,5 +52,16 @@ class BancoRemoteDataSource {
       data: payload,
     );
     return response.data as Map<String, dynamic>;
+  }
+
+  Future<List<dynamic>> getHistorial(String numCuenta) async {
+    final response = await apiClient.dio.get('${ApiConstants.pagosHistorial}/$numCuenta');
+    final data = response.data;
+    if (data is Map && data.containsKey('datos')) {
+      final d = data['datos'];
+      if (d is List) return d;
+    }
+    if (data is List) return data;
+    return [];
   }
 }

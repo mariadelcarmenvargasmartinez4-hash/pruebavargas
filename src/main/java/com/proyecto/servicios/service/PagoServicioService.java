@@ -4,6 +4,8 @@ import com.proyecto.servicios.model.pago.PagoConciliacionRequestDto;
 import com.proyecto.servicios.model.pago.PagoServicioRequestDto;
 import com.proyecto.servicios.model.pago.PagoServicioResponseDto;
 
+import java.util.List;
+
 /**
  * Servicio desacoplado para la recepción, validación, procesamiento y conciliación de pagos de servicios y recargas telefónicas.
  */
@@ -25,4 +27,12 @@ public interface PagoServicioService {
      * @return DTO con el estado actual o conciliado del pago
      */
     PagoServicioResponseDto consultarOConciliarPago(PagoConciliacionRequestDto request);
+
+    /**
+     * Obtiene el listado cronológico de transacciones y pagos de servicios aplicados a una cuenta bancaria.
+     *
+     * @param numCuenta Número de cuenta a consultar
+     * @return Lista de transacciones en orden cronológico descendente
+     */
+    List<PagoServicioResponseDto> obtenerHistorialPorCuenta(String numCuenta);
 }

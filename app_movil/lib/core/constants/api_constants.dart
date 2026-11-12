@@ -16,7 +16,8 @@ class ApiConstants {
 
   // Endpoints Negocio Bancario y Servicios
   static const String cuentas = '/cuentas';
-  static const String pagosProcesar = '/pagos/procesar';
+  static const String pagosProcesar = '/pagos';
+  static const String pagosHistorial = '/pagos/historial';
   static const String productos = '/productos';
   static const String catalogos = '/api/catalogos';
 

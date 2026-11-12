@@ -1,5 +1,6 @@
 import '../entities/cuenta.dart';
 import '../entities/producto.dart';
+import '../entities/transaccion.dart';
 
 abstract class BancoRepository {
   Future<List<Cuenta>> getCuentas();
@@ -14,4 +15,5 @@ abstract class BancoRepository {
     required String telefono,
     required String pin,
   });
+  Future<List<Transaccion>> getHistorial(String numCuenta);
 }
