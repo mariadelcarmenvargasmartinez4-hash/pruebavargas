@@ -16,7 +16,7 @@ import java.time.LocalDateTime;
 @Schema(description = "Respuesta de autenticación exitosa con token JWT")
 public class LoginResponseDto {
 
-    @Schema(description = "Código de respuesta (0 = Éxito)", example = "0")
+    @Schema(description = "Código de respuesta (0 = Éxito, 202 = Requiere 2FA)", example = "0")
     private Integer codigo;
 
     @Schema(description = "Mensaje descriptivo", example = "Autenticación exitosa")
@@ -42,4 +42,11 @@ public class LoginResponseDto {
 
     @Schema(description = "Fecha y hora de la autenticación")
     private LocalDateTime fechaAutenticacion;
+
+    @Schema(description = "Identificador de sesión única respaldada por el servidor", example = "a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+    private String sessionId;
+
+    @Schema(description = "Indica si se requiere verificación multifactor 2FA", example = "false")
+    @Builder.Default
+    private Boolean requiere2fa = false;
 }

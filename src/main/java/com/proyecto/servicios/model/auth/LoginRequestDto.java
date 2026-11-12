@@ -27,8 +27,10 @@ public class LoginRequestDto {
     @Schema(description = "Contraseña del usuario", example = "Segura123#")
     private String password;
 
+    @Schema(description = "Dispositivo de origen (WEB, MOVIL)", example = "WEB")
+    private String dispositivo;
+
     public LoginRequestRecord toRecord() {
         return LoginRequestRecord.de(this);
     }
 }
-

@@ -14,8 +14,9 @@ import org.springframework.stereotype.Component;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.UUID;
 
-// Utileria para generacion y validacion de tokens JWT
+// Utileria para generacion y validacion de tokens JWT firmados
 @Slf4j
 @Component
 public class JwtUtil {
@@ -26,18 +27,24 @@ public class JwtUtil {
     @Value("${jwt.expiration-ms:3600000}")
     private long expirationMs;
 
-    // Genera un token JWT con el username como subject y el clienteId como claim
-    public String generarToken(String username, Long clienteId) {
+    // Genera un token JWT con username, clienteId y sessionId para control de sesión única
+    public String generarToken(String username, Long clienteId, String sessionId) {
         Date ahora = new Date();
         Date expiracion = new Date(ahora.getTime() + expirationMs);
 
         return Jwts.builder()
                 .setSubject(username)
                 .claim("clienteId", clienteId)
+                .claim("sessionId", sessionId)
                 .setIssuedAt(ahora)
                 .setExpiration(expiracion)
                 .signWith(getSigningKey())
                 .compact();
+    }
+
+    // Sobrecarga de compatibilidad para generar token con sessionId autogenerado
+    public String generarToken(String username, Long clienteId) {
+        return generarToken(username, clienteId, UUID.randomUUID().toString());
     }
 
     // Extrae el username (subject) del token
@@ -48,6 +55,11 @@ public class JwtUtil {
     // Extrae el clienteId del token
     public Long extraerClienteId(String token) {
         return extraerClaims(token).get("clienteId", Long.class);
+    }
+
+    // Extrae el identificador de sesión única (sessionId) del token
+    public String extraerSessionId(String token) {
+        return extraerClaims(token).get("sessionId", String.class);
     }
 
     // Obtiene el tiempo de expiracion en segundos
