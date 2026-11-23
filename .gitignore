@@ -44,3 +44,10 @@ bin/
 
 # Scratch scripts
 scratch_*.py
+
+# Environment & Secret files
+.env
+.env.*
+*.env
+application-local.properties
+*.local.properties

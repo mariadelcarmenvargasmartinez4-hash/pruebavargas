@@ -8,6 +8,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 
@@ -37,12 +38,19 @@ public class TwoFactorAuthService {
     @Autowired(required = false)
     private JavaMailSender mailSender;
 
+    @Value("${spring.mail.username:}")
+    private String mailFrom;
+
     public TwoFactorAuthService(PasswordEncoder passwordEncoder) {
         this.passwordEncoder = passwordEncoder;
     }
 
     public void setMailSender(JavaMailSender mailSender) {
         this.mailSender = mailSender;
+    }
+
+    public void setMailFrom(String mailFrom) {
+        this.mailFrom = mailFrom;
     }
 
     /**
@@ -137,14 +145,23 @@ public class TwoFactorAuthService {
         }
         try {
             SimpleMailMessage mensaje = new SimpleMailMessage();
+            if (mailFrom != null && !mailFrom.isBlank()) {
+                mensaje.setFrom(mailFrom);
+            }
             mensaje.setTo(destinatario);
-            mensaje.setSubject("Código de Seguridad 2FA - Banca Digital");
-            mensaje.setText("Tu código de verificación temporal es: " + codigo +
-                    "\n\nVálido durante " + EXPIRACION_MINUTOS + " minutos. No compartas este código con nadie por seguridad.");
+            mensaje.setSubject("Código de Verificación 2FA - Banca Digital");
+            mensaje.setText("Estimado usuario,\n\n"
+                    + "Su código de verificación de doble factor (2FA) para acceder al sistema es:\n\n"
+                    + "   " + codigo + "\n\n"
+                    + "Este código es de un solo uso y expirará en " + EXPIRACION_MINUTOS + " minutos.\n"
+                    + "Por motivos de seguridad, nunca comparta este código con nadie.\n\n"
+                    + "Si usted no solicitó este código, por favor ignore este mensaje.\n\n"
+                    + "Atentamente,\n"
+                    + "Equipo de Seguridad - Banca Digital");
             mailSender.send(mensaje);
-            log.info("Código 2FA enviado por correo electrónico a '{}'", destinatario);
+            log.info("Código 2FA enviado exitosamente por correo electrónico a '{}'", destinatario);
         } catch (Exception e) {
-            log.warn("No fue posible despachar el correo 2FA a '{}': {}. Código local: [{}]", destinatario, e.getMessage(), codigo);
+            log.warn("No fue posible despachar el correo 2FA a '{}': {}. Fallback a log local: [{}]", destinatario, e.getMessage(), codigo);
         }
     }
 
