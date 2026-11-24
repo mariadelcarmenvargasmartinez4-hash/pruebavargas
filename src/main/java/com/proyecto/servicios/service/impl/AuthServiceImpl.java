@@ -17,6 +17,7 @@ import com.proyecto.servicios.service.AuthService;
 import com.proyecto.servicios.util.DeclarativeAssertUtil;
 import com.proyecto.servicios.util.JwtUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +37,13 @@ public class AuthServiceImpl implements AuthService {
     private final JwtUtil jwtUtil;
     private final UserSessionService userSessionService;
     private final TwoFactorAuthService twoFactorAuthService;
+
+    @Value("${app.security.2fa.login-required:true}")
+    private boolean dosFactoresRequeridoEnLogin = true;
+
+    public void setDosFactoresRequeridoEnLogin(boolean dosFactoresRequeridoEnLogin) {
+        this.dosFactoresRequeridoEnLogin = dosFactoresRequeridoEnLogin;
+    }
 
     public AuthServiceImpl(UsuarioAccesoRepository usuarioRepository,
                            PasswordEncoder passwordEncoder,
@@ -67,10 +75,29 @@ public class AuthServiceImpl implements AuthService {
         DeclarativeAssertUtil.asegurar(passwordEncoder.matches(request.getPassword(), usuario.getPasswordHash()),
                 () -> new CredencialesInvalidasException("Correo o contrasena incorrectos"));
 
+        String nombreCompleto = obtenerNombreCompleto(cliente);
+
+        if (dosFactoresRequeridoEnLogin) {
+            twoFactorAuthService.generarPinTemporal(usuario.getUsername());
+            log.info("Doble factor de autenticación (2FA) activado para usuario '{}'. PIN generado y despachado por correo electrónico.", usuario.getUsername());
+
+            return LoginResponseDto.builder()
+                    .codigo(0)
+                    .mensaje("Código de seguridad 2FA enviado a su correo electrónico: " + usuario.getUsername())
+                    .token("")
+                    .tipoToken("Bearer")
+                    .username(usuario.getUsername())
+                    .clienteId(cliente.getId())
+                    .nombreCompleto(nombreCompleto)
+                    .expiresIn(twoFactorAuthService.getExpiracionSegundos())
+                    .fechaAutenticacion(LocalDateTime.now())
+                    .sessionId("")
+                    .requiere2fa(true)
+                    .build();
+        }
+
         String dispositivo = Optional.ofNullable(request.getDispositivo()).filter(d -> !d.isBlank()).orElse("WEB");
         String sessionId = userSessionService.registrarNuevaSesion(usuario.getUsername(), dispositivo, "IP-Cliente");
-
-        String nombreCompleto = obtenerNombreCompleto(cliente);
 
         return LoginResponseDto.builder()
                 .codigo(0)
