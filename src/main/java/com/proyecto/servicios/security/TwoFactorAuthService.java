@@ -7,10 +7,12 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import jakarta.mail.internet.MimeMessage;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
 
 import java.math.BigDecimal;
 import java.security.SecureRandom;
@@ -230,13 +232,16 @@ public class TwoFactorAuthService {
             return;
         }
         try {
-            SimpleMailMessage mensaje = new SimpleMailMessage();
+            MimeMessage mimeMessage = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
+
             if (mailFrom != null && !mailFrom.isBlank()) {
-                mensaje.setFrom(mailFrom);
+                helper.setFrom(mailFrom, "Banca Digital GestoPago");
             }
-            mensaje.setTo(destinatario);
-            mensaje.setSubject("PIN de Autorización de Transacción - Banca Digital");
-            mensaje.setText("Estimado cliente,\n\n"
+            helper.setTo(destinatario);
+            helper.setSubject("PIN de Autorización de Transacción - Banca Digital");
+
+            String textoPlano = "Estimado cliente,\n\n"
                     + "Se ha solicitado una autorización de pago en su cuenta de Banca Digital:\n\n"
                     + "   • Servicio/Concepto: " + servicioNombre + "\n"
                     + (montoStr.isEmpty() ? "" : "   • Importe: " + montoStr + "\n")
@@ -245,11 +250,15 @@ public class TwoFactorAuthService {
                     + "Por motivos de seguridad, nunca comparta este código con nadie.\n\n"
                     + "Si usted no solicitó esta operación, por favor contacte a soporte inmediatamente.\n\n"
                     + "Atentamente,\n"
-                    + "Seguridad Bancaria - GestoPago Digital");
-            mailSender.send(mensaje);
-            log.info("PIN transaccional dinámico enviado exitosamente por correo a '{}'", destinatario);
+                    + "Seguridad Bancaria - GestoPago Digital";
+
+            String htmlBody = construirHtmlPinTransaccional(servicioNombre, montoStr, codigo);
+            helper.setText(textoPlano, htmlBody);
+
+            mailSender.send(mimeMessage);
+            log.info("Correo HTML corporativo con PIN transaccional dinámico enviado exitosamente a '{}'", destinatario);
         } catch (Exception e) {
-            log.warn("No fue posible despachar el correo con PIN transaccional a '{}': {}. Fallback a log: [{}]", destinatario, e.getMessage(), codigo);
+            log.warn("No fue posible despachar el correo HTML con PIN transaccional a '{}': {}. Fallback a log: [{}]", destinatario, e.getMessage(), codigo);
         }
     }
 
@@ -264,25 +273,182 @@ public class TwoFactorAuthService {
             return;
         }
         try {
-            SimpleMailMessage mensaje = new SimpleMailMessage();
+            MimeMessage mimeMessage = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
+
             if (mailFrom != null && !mailFrom.isBlank()) {
-                mensaje.setFrom(mailFrom);
+                helper.setFrom(mailFrom, "Banca Digital GestoPago");
             }
-            mensaje.setTo(destinatario);
-            mensaje.setSubject("Código de Verificación 2FA - Banca Digital");
-            mensaje.setText("Estimado usuario,\n\n"
+            helper.setTo(destinatario);
+            helper.setSubject("Código de Verificación 2FA - Banca Digital");
+
+            String textoPlano = "Estimado usuario,\n\n"
                     + "Su código de verificación de doble factor (2FA) para acceder al sistema es:\n\n"
                     + "   " + codigo + "\n\n"
                     + "Este código es de un solo uso y expirará en " + EXPIRACION_MINUTOS + " minutos.\n"
                     + "Por motivos de seguridad, nunca comparta este código con nadie.\n\n"
                     + "Si usted no solicitó este código, por favor ignore este mensaje.\n\n"
                     + "Atentamente,\n"
-                    + "Equipo de Seguridad - Banca Digital");
-            mailSender.send(mensaje);
-            log.info("Código 2FA enviado exitosamente por correo electrónico a '{}'", destinatario);
+                    + "Equipo de Seguridad - Banca Digital";
+
+            String htmlBody = construirHtmlLogin2fa(codigo);
+            helper.setText(textoPlano, htmlBody);
+
+            mailSender.send(mimeMessage);
+            log.info("Correo HTML corporativo con código 2FA de login enviado exitosamente a '{}'", destinatario);
         } catch (Exception e) {
-            log.warn("No fue posible despachar el correo 2FA a '{}': {}. Fallback a log local: [{}]", destinatario, e.getMessage(), codigo);
+            log.warn("No fue posible despachar el correo HTML 2FA a '{}': {}. Fallback a log local: [{}]", destinatario, e.getMessage(), codigo);
         }
+    }
+
+    private String construirHtmlLogin2fa(String codigo) {
+        return """
+            <!DOCTYPE html>
+            <html lang="es">
+            <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>Código de Verificación 2FA</title>
+            </head>
+            <body style="margin: 0; padding: 0; background-color: #F0F4F8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #2D3748;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #F0F4F8; padding: 35px 12px;">
+                <tr>
+                  <td align="center">
+                    <table role="presentation" width="100%" style="max-width: 560px; background-color: #FFFFFF; border-radius: 14px; overflow: hidden; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08); border: 1px solid #E2E8F0;" cellspacing="0" cellpadding="0">
+                      <tr>
+                        <td style="background: linear-gradient(135deg, #0B192C 0%, #1E3E62 100%); padding: 32px 25px; text-align: center;">
+                          <div style="display: inline-block; width: 48px; height: 48px; background: rgba(255, 255, 255, 0.12); border-radius: 12px; line-height: 48px; font-size: 24px;">🛡️</div>
+                          <h1 style="color: #FFFFFF; font-size: 21px; font-weight: 700; margin: 12px 0 4px 0; letter-spacing: 0.5px;">BANCA DIGITAL GESTOPAGO</h1>
+                          <p style="color: #94A3B8; font-size: 11px; margin: 0; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600;">Autenticación Segura de Doble Factor</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 35px 35px 25px 35px;">
+                          <h2 style="font-size: 17px; color: #0B192C; margin: 0 0 12px 0; font-weight: 600;">Código de Verificación de Acceso</h2>
+                          <p style="font-size: 14px; line-height: 1.6; color: #4A5568; margin: 0 0 24px 0;">
+                            Se ha detectado una solicitud de inicio de sesión en tu cuenta. Para confirmar tu identidad y acceder a la plataforma, ingresa el siguiente código de seguridad:
+                          </p>
+                          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 20px 0 25px 0;">
+                            <tr>
+                              <td align="center">
+                                <div style="background-color: #F0F7FF; border: 2px dashed #0056B3; border-radius: 12px; padding: 22px 15px; max-width: 360px; text-align: center;">
+                                  <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #0056B3; font-weight: 700; display: block; margin-bottom: 8px;">Código de Verificación 2FA</span>
+                                  <span style="font-size: 38px; font-weight: 800; letter-spacing: 10px; color: #0B192C; font-family: 'Courier New', Courier, monospace; display: block;">%s</span>
+                                  <span style="font-size: 12px; color: #64748B; margin-top: 8px; display: block; font-weight: 500;">⏱️ Válido durante 5 minutos • Un solo uso</span>
+                                </div>
+                              </td>
+                            </tr>
+                          </table>
+                          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #FFFBEB; border-left: 4px solid #F59E0B; border-radius: 6px; margin: 20px 0 10px 0;">
+                            <tr>
+                              <td style="padding: 12px 16px;">
+                                <p style="font-size: 12px; line-height: 1.5; color: #92400E; margin: 0;">
+                                  <strong>⚠️ Aviso de Seguridad:</strong> Nunca compartas este código con ninguna persona. El personal de soporte nunca te solicitará este PIN por teléfono o mensaje. Si no fuiste tú, te sugerimos cambiar tu contraseña de inmediato.
+                                </p>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="background-color: #F8FAFC; padding: 20px 30px; text-align: center; border-top: 1px solid #E2E8F0;">
+                          <p style="font-size: 11px; color: #94A3B8; margin: 0 0 6px 0;">
+                            Mensaje automático del Sistema de Banca Digital GestoPago.
+                          </p>
+                          <p style="font-size: 11px; color: #CBD5E1; margin: 0;">
+                            © 2026 Banca Digital GestoPago S.A. de C.V. Todos los derechos reservados.
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </body>
+            </html>
+            """.formatted(codigo);
+    }
+
+    private String construirHtmlPinTransaccional(String servicio, String monto, String codigo) {
+        return """
+            <!DOCTYPE html>
+            <html lang="es">
+            <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>PIN de Autorización de Transacción</title>
+            </head>
+            <body style="margin: 0; padding: 0; background-color: #F0F4F8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #2D3748;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #F0F4F8; padding: 35px 12px;">
+                <tr>
+                  <td align="center">
+                    <table role="presentation" width="100%" style="max-width: 560px; background-color: #FFFFFF; border-radius: 14px; overflow: hidden; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08); border: 1px solid #E2E8F0;" cellspacing="0" cellpadding="0">
+                      <tr>
+                        <td style="background: linear-gradient(135deg, #0B192C 0%, #1E3E62 100%); padding: 32px 25px; text-align: center;">
+                          <div style="display: inline-block; width: 48px; height: 48px; background: rgba(255, 255, 255, 0.12); border-radius: 12px; line-height: 48px; font-size: 24px;">💳</div>
+                          <h1 style="color: #FFFFFF; font-size: 21px; font-weight: 700; margin: 12px 0 4px 0; letter-spacing: 0.5px;">BANCA DIGITAL GESTOPAGO</h1>
+                          <p style="color: #94A3B8; font-size: 11px; margin: 0; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600;">Autorización Segura de Pago</p>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 35px 35px 25px 35px;">
+                          <h2 style="font-size: 17px; color: #0B192C; margin: 0 0 12px 0; font-weight: 600;">Autorización de Transacción Financiera</h2>
+                          <p style="font-size: 14px; line-height: 1.6; color: #4A5568; margin: 0 0 20px 0;">
+                            Se ha iniciado una transacción desde tu cuenta de banca digital. Revisa los datos de la operación e introduce el código PIN para confirmar:
+                          </p>
+                          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; margin-bottom: 22px; overflow: hidden;">
+                            <tr>
+                              <td style="padding: 12px 18px; border-bottom: 1px solid #EDF2F7; font-size: 13px; color: #64748B; width: 40%;">Servicio / Destino:</td>
+                              <td style="padding: 12px 18px; border-bottom: 1px solid #EDF2F7; font-size: 13px; color: #0B192C; font-weight: 700;">%s</td>
+                            </tr>
+                            <tr>
+                              <td style="padding: 12px 18px; border-bottom: 1px solid #EDF2F7; font-size: 13px; color: #64748B;">Total a Debitar:</td>
+                              <td style="padding: 12px 18px; border-bottom: 1px solid #EDF2F7; font-size: 16px; color: #00875A; font-weight: 800;">%s</td>
+                            </tr>
+                            <tr>
+                              <td style="padding: 12px 18px; font-size: 13px; color: #64748B;">Tipo de Validación:</td>
+                              <td style="padding: 12px 18px; font-size: 13px; color: #0B192C; font-weight: 600;">PIN Dinámico OTP (One-Time Password)</td>
+                            </tr>
+                          </table>
+                          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 15px 0 25px 0;">
+                            <tr>
+                              <td align="center">
+                                <div style="background-color: #F0FDF4; border: 2px dashed #00875A; border-radius: 12px; padding: 22px 15px; max-width: 360px; text-align: center;">
+                                  <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #00875A; font-weight: 700; display: block; margin-bottom: 8px;">PIN de Autorización Bancaria</span>
+                                  <span style="font-size: 38px; font-weight: 800; letter-spacing: 10px; color: #0B192C; font-family: 'Courier New', Courier, monospace; display: block;">%s</span>
+                                  <span style="font-size: 12px; color: #64748B; margin-top: 8px; display: block; font-weight: 500;">⏱️ Expira en 5 minutos • De un solo uso</span>
+                                </div>
+                              </td>
+                            </tr>
+                          </table>
+                          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #FEF2F2; border-left: 4px solid #EF4444; border-radius: 6px; margin: 15px 0 10px 0;">
+                            <tr>
+                              <td style="padding: 12px 16px;">
+                                <p style="font-size: 12px; line-height: 1.5; color: #991B1B; margin: 0;">
+                                  <strong>🛡️ Protección Antifraude:</strong> Si tú no solicitaste este pago o desconoces el monto/concepto, <strong>NO ingreses este PIN</strong>. Tu dinero está seguro y ningún cargo se aplicará sin esta clave.
+                                </p>
+                              </td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="background-color: #F8FAFC; padding: 20px 30px; text-align: center; border-top: 1px solid #E2E8F0;">
+                          <p style="font-size: 11px; color: #94A3B8; margin: 0 0 6px 0;">
+                            Notificación confidencial emitida por Banca Digital GestoPago.
+                          </p>
+                          <p style="font-size: 11px; color: #CBD5E1; margin: 0;">
+                            © 2026 Banca Digital GestoPago S.A. de C.V. Todos los derechos reservados.
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </body>
+            </html>
+            """.formatted(servicio, monto, codigo);
     }
 
     @Getter
