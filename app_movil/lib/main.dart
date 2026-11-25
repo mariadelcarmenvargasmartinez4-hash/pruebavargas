@@ -1,5 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'core/constants/api_constants.dart';
 import 'core/network/api_client.dart';
 import 'core/storage/secure_storage_service.dart';
 import 'core/theme/app_theme.dart';
@@ -9,6 +11,7 @@ import 'data/repositories/auth_repository_impl.dart';
 import 'data/repositories/banco_repository_impl.dart';
 import 'presentation/screens/dashboard_screen.dart';
 import 'presentation/screens/login_screen.dart';
+import 'presentation/screens/two_factor_screen.dart';
 import 'presentation/state/auth_provider.dart';
 import 'presentation/state/banco_provider.dart';
 import 'presentation/widgets/loading_spinner.dart';
@@ -16,6 +19,10 @@ import 'presentation/widgets/session_conflict_dialog.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (kIsWeb) {
+    ApiConstants.activeBaseUrl = ApiConstants.baseUrlWeb;
+  }
 
   final storageService = SecureStorageService();
 
@@ -47,6 +54,7 @@ void main() {
   runApp(
     MultiProvider(
       providers: [
+        Provider<ApiClient>.value(value: apiClient),
         ChangeNotifierProvider.value(value: authProvider),
         ChangeNotifierProvider.value(value: bancoProvider),
       ],
@@ -100,8 +108,7 @@ class _GestoPagoAppState extends State<GestoPagoApp> {
             });
           }
 
-          if (auth.status == AuthStatus.initial ||
-              (auth.status == AuthStatus.loading && auth.session == null)) {
+          if (auth.status == AuthStatus.initial) {
             return const Scaffold(
               body: LoadingSpinner(message: 'Verificando sesión segura...'),
             );
@@ -109,6 +116,10 @@ class _GestoPagoAppState extends State<GestoPagoApp> {
 
           if (auth.status == AuthStatus.authenticated) {
             return const DashboardScreen();
+          }
+
+          if (auth.status == AuthStatus.twoFactorRequired) {
+            return const TwoFactorScreen();
           }
 
           return const LoginScreen();

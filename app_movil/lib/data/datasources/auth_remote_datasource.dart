@@ -38,6 +38,14 @@ class AuthRemoteDataSource {
     return response.data as Map<String, dynamic>;
   }
 
+  Future<Map<String, dynamic>> registrarCliente(Map<String, dynamic> datosCliente) async {
+    final response = await apiClient.dio.post(
+      ApiConstants.clientes,
+      data: datosCliente,
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
   Future<void> logout() async {
     try {
       await apiClient.dio.post(ApiConstants.logout);

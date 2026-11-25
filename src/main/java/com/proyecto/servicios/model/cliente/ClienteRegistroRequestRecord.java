@@ -33,6 +33,9 @@ public record ClienteRegistroRequestRecord(
         @Schema(description = "Fecha de nacimiento (AAAA-MM-DD)", example = "1990-05-15")
         LocalDate fechaNacimiento,
 
+        @Schema(description = "Entidad federativa de nacimiento", example = "DF")
+        String entidadNacimiento,
+
         @Schema(description = "CURP oficial de 18 caracteres alfanuméricos", example = "PELJ900515HDFRPR09")
         String curp,
 
@@ -127,6 +130,7 @@ public record ClienteRegistroRequestRecord(
                 "El RFC no cumple con el formato oficial de 12 o 13 caracteres (ejemplo: AAAA000000AAA)");
 
         // Catálogos
+        DeclarativeAssertUtil.asegurar(entidadNacimiento != null && !entidadNacimiento.isBlank(), "La entidad federativa de nacimiento es obligatoria y no debe estar vacía");
         DeclarativeAssertUtil.asegurar(sexo != null && !sexo.isBlank(), "El sexo es obligatorio y no debe estar vacío");
         DeclarativeAssertUtil.asegurar(nacionalidad != null && !nacionalidad.isBlank(), "La nacionalidad es obligatoria y no debe estar vacía");
         DeclarativeAssertUtil.asegurar(estadoCivil != null && !estadoCivil.isBlank(), "El estado civil es obligatorio y no debe estar vacío");
@@ -138,11 +142,30 @@ public record ClienteRegistroRequestRecord(
                 "El teléfono móvil solo acepta 10 dígitos numéricos (sin guiones ni espacios)");
 
         // Domicilio
-        DeclarativeAssertUtil.asegurar(calle != null && !calle.isBlank(), "La calle es obligatoria y no debe estar vacía");
-        DeclarativeAssertUtil.asegurar(numeroExterior != null && !numeroExterior.isBlank(), "El número exterior es obligatorio");
-        DeclarativeAssertUtil.asegurar(colonia != null && !colonia.isBlank(), "La colonia es obligatoria");
-        DeclarativeAssertUtil.asegurar(municipio != null && !municipio.isBlank(), "El municipio es obligatorio");
-        DeclarativeAssertUtil.asegurar(estado != null && !estado.isBlank(), "El estado es obligatorio");
+        DeclarativeAssertUtil.asegurar(calle != null && !calle.isBlank()
+                && !calle.startsWith(" ") && !calle.endsWith(" ") && !calle.contains("  ")
+                && calle.length() >= 3 && calle.length() <= 60
+                && calle.matches("^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ ]+$"),
+                "La calle es obligatoria, de 3 a 60 letras y sin espacios inválidos");
+        DeclarativeAssertUtil.asegurar(numeroExterior != null && numeroExterior.trim().matches("^\\d{1,6}$"),
+                "El número exterior es obligatorio y solo acepta números (de 1 a 6 dígitos)");
+        DeclarativeAssertUtil.asegurar(numeroInterior == null || numeroInterior.isBlank() || numeroInterior.trim().matches("^\\d{1,6}$"),
+                "El número interior solo acepta números (máximo 6 dígitos)");
+        DeclarativeAssertUtil.asegurar(colonia != null && !colonia.isBlank()
+                && !colonia.startsWith(" ") && !colonia.endsWith(" ") && !colonia.contains("  ")
+                && colonia.length() >= 3 && colonia.length() <= 60
+                && colonia.matches("^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ ]+$"),
+                "La colonia es obligatoria, de 3 a 60 letras y sin espacios inválidos");
+        DeclarativeAssertUtil.asegurar(municipio != null && !municipio.isBlank()
+                && !municipio.startsWith(" ") && !municipio.endsWith(" ") && !municipio.contains("  ")
+                && municipio.length() >= 3 && municipio.length() <= 60
+                && municipio.matches("^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ ]+$"),
+                "El municipio es obligatorio, de 3 a 60 letras y sin espacios inválidos");
+        DeclarativeAssertUtil.asegurar(estado != null && !estado.isBlank()
+                && !estado.startsWith(" ") && !estado.endsWith(" ") && !estado.contains("  ")
+                && estado.length() >= 4 && estado.length() <= 40
+                && estado.matches("^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ ]+$"),
+                "El estado es obligatorio, de 4 a 40 letras y sin espacios inválidos");
         DeclarativeAssertUtil.asegurar(codigoPostal != null && codigoPostal.trim().matches("^\\d{5}$"),
                 "El código postal debe contener exactamente 5 dígitos numéricos");
         DeclarativeAssertUtil.asegurar(pais != null && !pais.isBlank(), "El país es obligatorio");
@@ -168,6 +191,7 @@ public record ClienteRegistroRequestRecord(
         apellidoMaterno = apellidoMaterno.trim();
         curp = curp.trim().toUpperCase();
         rfc = rfc.trim().toUpperCase();
+        entidadNacimiento = entidadNacimiento.trim().toUpperCase();
         sexo = sexo.trim().toUpperCase();
         nacionalidad = nacionalidad.trim().toUpperCase();
         estadoCivil = estadoCivil.trim().toUpperCase();
@@ -194,6 +218,7 @@ public record ClienteRegistroRequestRecord(
                 dto.getApellidoPaterno(),
                 dto.getApellidoMaterno(),
                 dto.getFechaNacimiento(),
+                dto.getEntidadNacimiento(),
                 dto.getCurp(),
                 dto.getRfc(),
                 dto.getSexo(),

@@ -3,6 +3,8 @@ package com.proyecto.servicios.controller.catalogo;
 import com.proyecto.servicios.model.catalogo.CatalogoActualizacionDto;
 import com.proyecto.servicios.model.catalogo.CatalogoCreacionDto;
 import com.proyecto.servicios.model.catalogo.CatalogoItemDto;
+import com.proyecto.servicios.model.common.GenericResponse;
+import com.proyecto.servicios.model.common.PaginaResponseRecord;
 import com.proyecto.servicios.service.EstadoCivilService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -45,8 +47,20 @@ public class EstadoCivilController {
 
         com.proyecto.servicios.model.catalogo.CatalogoConsultaFiltroRecord filtro =
                 new com.proyecto.servicios.model.catalogo.CatalogoConsultaFiltroRecord(soloActivos, busqueda, page, size, sortBy, sortDir, pack);
-        com.proyecto.servicios.model.common.PaginaResponseRecord<CatalogoItemDto> resultado = estadoCivilService.buscarPaginado(filtro);
-        return ResponseEntity.ok(com.proyecto.servicios.model.common.GenericResponse.exito(resultado, "Catálogo de estados civiles consultado exitosamente"));
+        PaginaResponseRecord<CatalogoItemDto> resultado = estadoCivilService.buscarPaginado(filtro);
+        return ResponseEntity.ok(GenericResponse.exito(resultado, "Catálogo de estados civiles consultado exitosamente"));
+    }
+
+    @GetMapping(value = "/activos", produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "Listar todos los estados civiles activos")
+    public ResponseEntity<GenericResponse<java.util.List<CatalogoItemDto>>> listarActivos() {
+        return ResponseEntity.ok(GenericResponse.exito(estadoCivilService.listarActivos(), "Lista de estados civiles activos"));
+    }
+
+    @GetMapping(value = "/todos", produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "Listar todos los estados civiles")
+    public ResponseEntity<GenericResponse<java.util.List<CatalogoItemDto>>> listarTodos() {
+        return ResponseEntity.ok(GenericResponse.exito(estadoCivilService.listarTodos(), "Lista de todos los estados civiles"));
     }
 
     @GetMapping(value = "/{id}", produces = MediaType.APPLICATION_JSON_VALUE)

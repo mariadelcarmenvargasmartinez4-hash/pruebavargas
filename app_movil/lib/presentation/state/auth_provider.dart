@@ -47,12 +47,27 @@ class AuthProvider extends ChangeNotifier {
     _status = AuthStatus.loading;
     notifyListeners();
 
-    final isAlive = await authRepository.checkActiveSession();
-    if (isAlive) {
-      _status = AuthStatus.authenticated;
-    } else {
+    try {
+      final session = await authRepository.checkActiveSession();
+      if (session != null) {
+        _session = session;
+        _status = AuthStatus.authenticated;
+      } else {
+        _session = null;
+        _status = AuthStatus.unauthenticated;
+      }
+    } catch (_) {
+      _session = null;
       _status = AuthStatus.unauthenticated;
     }
+    notifyListeners();
+  }
+
+  void cancelar2Fa() {
+    _status = AuthStatus.unauthenticated;
+    _session = null;
+    _pendingUsername = '';
+    _errorMessage = null;
     notifyListeners();
   }
 
@@ -118,6 +133,29 @@ class AuthProvider extends ChangeNotifier {
       _errorMessage = ApiClient.parseError(e);
       notifyListeners();
       return false;
+    }
+  }
+
+  Map<String, String> _registroFieldErrors = {};
+  Map<String, String> get registroFieldErrors => _registroFieldErrors;
+
+  Future<Map<String, dynamic>?> registrarCliente(Map<String, dynamic> datosCliente) async {
+    _status = AuthStatus.loading;
+    _errorMessage = null;
+    _registroFieldErrors = {};
+    notifyListeners();
+
+    try {
+      final respuesta = await authRepository.registrarCliente(datosCliente);
+      _status = AuthStatus.unauthenticated;
+      notifyListeners();
+      return respuesta;
+    } catch (e) {
+      _status = AuthStatus.unauthenticated;
+      _errorMessage = ApiClient.parseError(e);
+      _registroFieldErrors = ApiClient.extractFieldErrors(e);
+      notifyListeners();
+      return null;
     }
   }
 

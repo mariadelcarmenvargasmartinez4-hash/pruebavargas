@@ -46,6 +46,13 @@ class BancoRemoteDataSource {
     return [];
   }
 
+  Future<void> solicitarPinTransaccional(Map<String, dynamic> payload) async {
+    await apiClient.dio.post(
+      ApiConstants.pagosSolicitarPin,
+      data: payload,
+    );
+  }
+
   Future<Map<String, dynamic>> procesarPago(Map<String, dynamic> payload) async {
     final response = await apiClient.dio.post(
       ApiConstants.pagosProcesar,

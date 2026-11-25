@@ -28,7 +28,7 @@ public final class PagoTestDataBuilder {
                 .idServicio(1L)
                 .idProducto(101L)
                 .monto(new BigDecimal("150.00"))
-                .upe("1234567890")
+                .upe("AB12345678")
                 .bandera(true)
                 .telefono("5598765432")
                 .pin(TestCredentials.testPin());
@@ -110,7 +110,7 @@ public final class PagoTestDataBuilder {
      */
     public static PagoConciliacionRequestDto conciliacionRequestValido() {
         return PagoConciliacionRequestDto.builder()
-                .upe("1234567890")
+                .upe("AB12345678")
                 .build();
     }
 }

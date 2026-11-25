@@ -29,12 +29,12 @@ import java.time.LocalDate;
 public class ClienteRegistroRequestDto {
 
     // Datos Personales con validación granular de nombres y apellidos
-    @ValidTextoNombre(tipo = "nombre", obligatorio = true)
-    @Schema(description = "Primer nombre", example = "Juan")
+    @ValidTextoNombre(tipo = "nombre", obligatorio = true, max = 100)
+    @Schema(description = "Nombre completo del cliente (uno o varios nombres)", example = "Juan Carlos")
     private String nombre;
 
-    @ValidTextoNombre(tipo = "segundoNombre", obligatorio = false)
-    @Schema(description = "Segundo nombre (opcional)", example = "Carlos")
+    @ValidTextoNombre(tipo = "segundoNombre", obligatorio = false, max = 50)
+    @Schema(description = "Segundo nombre (opcional para retrocompatibilidad)", example = "Carlos")
     private String segundoNombre;
 
     @ValidTextoNombre(tipo = "apellidoPaterno", obligatorio = true)
@@ -50,6 +50,11 @@ public class ClienteRegistroRequestDto {
     @JsonFormat(pattern = "yyyy-MM-dd")
     @Schema(description = "Fecha de nacimiento (AAAA-MM-DD)", example = "1990-05-15")
     private LocalDate fechaNacimiento;
+
+    @NotBlank(message = "La entidad federativa de nacimiento es obligatoria y no debe estar vacía")
+    @Size(max = 50, message = "La entidad federativa de nacimiento no puede exceder 50 caracteres")
+    @Schema(description = "Entidad federativa de nacimiento del cliente (clave RENAPO o descripción)", example = "DF")
+    private String entidadNacimiento;
 
     @NotBlank(message = "El CURP es obligatorio y no debe estar vacío")
     @Pattern(regexp = "^(?i)[A-Z]{4}\\d{6}[HM][A-Z]{5}[A-Z0-9]\\d$", message = "El CURP no cumple con el formato oficial de 18 caracteres (ejemplo: AAAA000000HAAAAA00)")
@@ -95,35 +100,28 @@ public class ClienteRegistroRequestDto {
     private String telefonoAlternativo;
 
     // Domicilio (Tabla domicilios)
-    @NotBlank(message = "La calle es obligatoria y no debe estar vacía")
-    @Size(max = 100, message = "La calle no puede exceder 100 caracteres")
-    @Schema(description = "Calle de domicilio", example = "Av. Reforma")
+    @ValidTextoNombre(tipo = "campo calle", obligatorio = true, min = 3, max = 60)
+    @Schema(description = "Calle de domicilio", example = "Avenida Reforma")
     private String calle;
 
     @NotBlank(message = "El número exterior es obligatorio y no debe estar vacío")
-    @Size(max = 20, message = "El número exterior no puede exceder 20 caracteres")
-    @Schema(description = "Número exterior", example = "123")
+    @Pattern(regexp = "^\\d{1,6}$", message = "El número exterior solo acepta números (de 1 a 6 dígitos)")
+    @Schema(description = "Número exterior numérico", example = "123")
     private String numeroExterior;
 
-    @Size(max = 20, message = "El número interior no puede exceder 20 caracteres")
-    @Schema(description = "Número interior (opcional)", example = "Piso 4, Depto B")
+    @Pattern(regexp = "^$|^\\d{1,6}$", message = "El número interior solo acepta números (máximo 6 dígitos)")
+    @Schema(description = "Número interior numérico (opcional)", example = "12")
     private String numeroInterior;
 
-    @NotBlank(message = "La colonia es obligatoria y no debe estar vacía")
-    @Size(max = 100, message = "La colonia no puede exceder 100 caracteres")
-    @Pattern(regexp = "^[a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ .'-]{2,100}$", message = "La colonia solo puede contener letras, números y espacios válidos")
+    @ValidTextoNombre(tipo = "campo colonia", obligatorio = true, min = 3, max = 60)
     @Schema(description = "Colonia", example = "Juarez")
     private String colonia;
 
-    @NotBlank(message = "El municipio o alcaldía es obligatorio y no debe estar vacío")
-    @Size(max = 100, message = "El municipio no puede exceder 100 caracteres")
-    @Pattern(regexp = "^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ .'-]{2,100}$", message = "El municipio o alcaldía solo puede contener letras y espacios válidos")
+    @ValidTextoNombre(tipo = "campo municipio", obligatorio = true, min = 3, max = 60)
     @Schema(description = "Municipio o alcaldía", example = "Cuauhtemoc")
     private String municipio;
 
-    @NotBlank(message = "El estado es obligatorio y no debe estar vacío")
-    @Size(max = 50, message = "El estado no puede exceder 50 caracteres")
-    @Pattern(regexp = "^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ .'-]{2,50}$", message = "El estado solo puede contener letras y espacios válidos")
+    @ValidTextoNombre(tipo = "campo estado", obligatorio = true, min = 4, max = 40)
     @Schema(description = "Estado o entidad federativa", example = "Ciudad de Mexico")
     private String estado;
 

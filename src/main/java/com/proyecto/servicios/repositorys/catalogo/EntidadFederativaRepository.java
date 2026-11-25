@@ -1,0 +1,27 @@
+package com.proyecto.servicios.repositorys.catalogo;
+
+import com.proyecto.servicios.entity.catalogo.EntidadFederativaEntity;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.stereotype.Repository;
+
+import java.util.List;
+import java.util.Optional;
+
+@Repository
+public interface EntidadFederativaRepository extends JpaRepository<EntidadFederativaEntity, Long>, JpaSpecificationExecutor<EntidadFederativaEntity> {
+
+    List<EntidadFederativaEntity> findByActivoTrue();
+
+    Optional<EntidadFederativaEntity> findByCodigoIgnoreCase(String codigo);
+
+    Optional<EntidadFederativaEntity> findByDescripcionIgnoreCase(String descripcion);
+
+    boolean existsByCodigoIgnoreCase(String codigo);
+
+    boolean existsByDescripcionIgnoreCase(String descripcion);
+
+    boolean existsByCodigoIgnoreCaseAndActivoTrue(String codigo);
+
+    boolean existsByDescripcionIgnoreCaseAndActivoTrue(String descripcion);
+}

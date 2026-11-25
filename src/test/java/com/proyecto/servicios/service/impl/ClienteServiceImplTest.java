@@ -86,6 +86,9 @@ class ClienteServiceImplTest {
     private EstadoCivilService estadoCivilService;
 
     @Mock
+    private EntidadFederativaService entidadFederativaService;
+
+    @Mock
     private MetricasTextoUtil metricasTextoUtil;
 
     @InjectMocks
@@ -99,6 +102,7 @@ class ClienteServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.lenient().when(entidadFederativaService.esValidoYActivo(org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
         requestValido = ClienteTestDataBuilder.requestValido();
         clienteMock = ClienteTestDataBuilder.clienteValido();
         domicilioMock = ClienteTestDataBuilder.domicilioValido(clienteMock);
@@ -133,7 +137,7 @@ class ClienteServiceImplTest {
         assertEquals("Juan Carlos Perez Lopez", respuesta.getNombreCompleto());
         assertEquals(clienteMock.getCurp(), respuesta.getCurp());
         assertNotNull(respuesta.getDomicilio());
-        assertEquals("Av. Reforma", respuesta.getDomicilio().getCalle());
+        assertEquals("Avenida Reforma", respuesta.getDomicilio().getCalle());
         assertNotNull(respuesta.getCuentaBancaria());
         assertEquals("4815162342", respuesta.getCuentaBancaria().getNumeroCuenta());
         assertEquals("ACTIVA", respuesta.getCuentaBancaria().getEstatus());

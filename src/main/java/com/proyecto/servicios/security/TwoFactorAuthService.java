@@ -21,6 +21,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Servicio de Autenticación Multifactor (2FA) y gestión de PINs temporales de un solo uso (OTP).
@@ -34,6 +35,9 @@ public class TwoFactorAuthService {
     private static final int MAX_INTENTOS = 3;
     private static final long EXPIRACION_MINUTOS = 5;
     private static final long COOLDOWN_SEGUNDOS = 60;
+    private static final String LETRAS_MAYUSCULAS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    private static final String DIGITOS = "0123456789";
+    private static final String ALFANUMERICO = LETRAS_MAYUSCULAS + DIGITOS;
 
     private final PasswordEncoder passwordEncoder;
     private final SecureRandom secureRandom = new SecureRandom();
@@ -65,6 +69,14 @@ public class TwoFactorAuthService {
      * @return El PIN en texto plano para ser despachado al usuario (SMS/Email/Respuesta de prueba)
      */
     public String generarPinTemporal(String username) {
+        return generarPinTemporal(username, true);
+    }
+
+    /**
+     * @param aplicarCooldown true para el reenvío manual (anti-flooding de 60s); false en el login,
+     *                        donde cada autenticación válida debe generar y enviar un código nuevo de inmediato.
+     */
+    public String generarPinTemporal(String username, boolean aplicarCooldown) {
         if (username == null || username.isBlank()) {
             throw new ReglaNegocioException("El usuario es requerido para generar el PIN temporal 2FA");
         }
@@ -75,9 +87,9 @@ public class TwoFactorAuthService {
 
         LocalDateTime ahora = LocalDateTime.now();
 
-        // Protección contra solicitudes excesivas (anti-flooding / rate-limiting 60s)
+        // Protección contra solicitudes excesivas (anti-flooding / rate-limiting 60s) solo en reenvíos manuales
         TwoFactorPinEntry entryExistente = activeCodes.get(userKey);
-        if (entryExistente != null && entryExistente.getFechaCreacion().plusSeconds(COOLDOWN_SEGUNDOS).isAfter(ahora)) {
+        if (aplicarCooldown && entryExistente != null && entryExistente.getFechaCreacion().plusSeconds(COOLDOWN_SEGUNDOS).isAfter(ahora)) {
             long segundosRestantes = ChronoUnit.SECONDS.between(ahora, entryExistente.getFechaCreacion().plusSeconds(COOLDOWN_SEGUNDOS));
             throw new ReglaNegocioException("Debe esperar " + Math.max(1, segundosRestantes) + " segundos antes de solicitar un nuevo código de verificación 2FA.");
         }
@@ -85,9 +97,14 @@ public class TwoFactorAuthService {
         LocalDateTime expiracion = ahora.plus(EXPIRACION_MINUTOS, ChronoUnit.MINUTES);
 
         TwoFactorPinEntry entry = new TwoFactorPinEntry(passwordEncoder.encode(pinPlano), ahora, expiracion);
+        // Si ya había un código vigente (doble clic / segundo login), ambos códigos siguen siendo válidos
+        if (entryExistente != null && ahora.isBefore(entryExistente.getExpiracion())) {
+            entry.heredarCodigos(entryExistente);
+        }
         activeCodes.put(userKey, entry);
 
-        despacharCodigoSeguro(username, pinPlano);
+        // Envío asíncrono: la respuesta del login no espera al servidor SMTP
+        CompletableFuture.runAsync(() -> despacharCodigoSeguro(username, pinPlano));
         return pinPlano;
     }
 
@@ -120,7 +137,7 @@ public class TwoFactorAuthService {
             throw new CredencialesInvalidasException("Ha superado el número máximo de intentos permitidos (3). El código fue invalidado.");
         }
 
-        boolean coincide = passwordEncoder.matches(pinIngresado.trim(), entry.getPinHash());
+        boolean coincide = entry.coincide(pinIngresado.trim(), passwordEncoder);
         if (!coincide) {
             entry.incrementarIntentos();
             int restantes = MAX_INTENTOS - entry.getIntentos();
@@ -137,15 +154,31 @@ public class TwoFactorAuthService {
         return true;
     }
 
+    private String generarCodigoAlfanumerico10() {
+        char[] chars = new char[10];
+        chars[0] = LETRAS_MAYUSCULAS.charAt(secureRandom.nextInt(LETRAS_MAYUSCULAS.length()));
+        chars[1] = DIGITOS.charAt(secureRandom.nextInt(DIGITOS.length()));
+        for (int i = 2; i < 10; i++) {
+            chars[i] = ALFANUMERICO.charAt(secureRandom.nextInt(ALFANUMERICO.length()));
+        }
+        for (int i = chars.length - 1; i > 0; i--) {
+            int j = secureRandom.nextInt(i + 1);
+            char temp = chars[i];
+            chars[i] = chars[j];
+            chars[j] = temp;
+        }
+        return new String(chars);
+    }
+
     /**
-     * Genera y despacha un PIN dinámico de un solo uso (OTP) para autorizar una transacción financiera específica.
-     * Se almacena bajo una clave única por cuenta/operación y se envía al correo registrado del titular.
+     * Genera y despacha un código dinámico de un solo uso (OTP) de 10 caracteres alfanuméricos
+     * (combinando letras y números) para autorizar una transacción financiera específica.
      *
      * @param destinatarioCorreo Correo electrónico del cliente titular
      * @param claveOperacion     Número de cuenta o identificador de operación
      * @param monto              Importe de la transacción
      * @param servicio           Nombre del servicio o concepto a pagar
-     * @return El PIN plano de 6 dígitos generado
+     * @return El código plano de 10 caracteres (letras y números) generado
      */
     public String generarPinTransaccional(String destinatarioCorreo, String claveOperacion, BigDecimal monto, String servicio) {
         if (destinatarioCorreo == null || destinatarioCorreo.isBlank()) {
@@ -156,16 +189,19 @@ public class TwoFactorAuthService {
         }
 
         String key = "TX_" + claveOperacion.trim().toLowerCase();
-        int pinNumero = 100000 + secureRandom.nextInt(900000); // 6 dígitos numéricos
-        String pinPlano = String.valueOf(pinNumero);
+        String pinPlano = generarCodigoAlfanumerico10();
 
         LocalDateTime ahora = LocalDateTime.now();
         LocalDateTime expiracion = ahora.plus(EXPIRACION_MINUTOS, ChronoUnit.MINUTES);
 
+        TwoFactorPinEntry entryExistente = activeCodes.get(key);
         TwoFactorPinEntry entry = new TwoFactorPinEntry(passwordEncoder.encode(pinPlano), ahora, expiracion);
+        if (entryExistente != null && ahora.isBefore(entryExistente.getExpiracion())) {
+            entry.heredarCodigos(entryExistente);
+        }
         activeCodes.put(key, entry);
 
-        despacharPinTransaccional(destinatarioCorreo, pinPlano, monto, servicio);
+        CompletableFuture.runAsync(() -> despacharPinTransaccional(destinatarioCorreo, pinPlano, monto, servicio));
         return pinPlano;
     }
 
@@ -185,10 +221,10 @@ public class TwoFactorAuthService {
     }
 
     /**
-     * Valida el PIN dinámico de transacción ingresado y, de ser correcto, lo consume de inmediato (OTP).
+     * Valida el código dinámico de transacción ingresado (10 caracteres con letras y números).
      *
      * @param claveOperacion Identificador de la cuenta u operación
-     * @param pinIngresado   PIN de 6 dígitos introducido por el usuario
+     * @param pinIngresado   Código de 10 caracteres introducido por el usuario
      * @return true si es válido y no expirado
      */
     public boolean validarPinTransaccional(String claveOperacion, String pinIngresado) {
@@ -207,7 +243,8 @@ public class TwoFactorAuthService {
             return false;
         }
 
-        boolean coincide = passwordEncoder.matches(pinIngresado.trim(), entry.getPinHash());
+        String pinNormalizado = pinIngresado.trim().toUpperCase(Locale.ROOT);
+        boolean coincide = entry.coincide(pinNormalizado, passwordEncoder);
         if (!coincide) {
             entry.incrementarIntentos();
             if (MAX_INTENTOS - entry.getIntentos() <= 0) {
@@ -216,10 +253,17 @@ public class TwoFactorAuthService {
             return false;
         }
 
-        // Éxito: One-Time Password consumido de inmediato
-        activeCodes.remove(key);
-        log.info("PIN dinámico transaccional validado y consumido exitosamente para operación '{}'", claveOperacion);
+        log.info("Código dinámico transaccional validado exitosamente para operación '{}'", claveOperacion);
         return true;
+    }
+
+    /**
+     * Consume de forma definitiva el código OTP transaccional una vez aplicada la operación.
+     */
+    public void consumirPinTransaccional(String claveOperacion) {
+        if (claveOperacion == null || claveOperacion.isBlank()) return;
+        String key = "TX_" + claveOperacion.trim().toLowerCase();
+        activeCodes.remove(key);
     }
 
     private void despacharPinTransaccional(String destinatario, String codigo, BigDecimal monto, String servicio) {
@@ -235,10 +279,11 @@ public class TwoFactorAuthService {
             MimeMessage mimeMessage = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
 
-            if (mailFrom != null && !mailFrom.isBlank()) {
-                helper.setFrom(mailFrom, "Banca Digital GestoPago");
-            }
-            helper.setTo(destinatario);
+            String fromEffective = (mailFrom != null && !mailFrom.isBlank()) ? mailFrom : "samantanavarro08@gmail.com";
+            helper.setFrom(fromEffective, "Banca Digital GestoPago");
+            mimeMessage.setHeader("X-Priority", "1");
+            mimeMessage.setHeader("Importance", "High");
+            helper.setTo(destinatario.trim());
             helper.setSubject("PIN de Autorización de Transacción - Banca Digital");
 
             String textoPlano = "Estimado cliente,\n\n"
@@ -256,7 +301,7 @@ public class TwoFactorAuthService {
             helper.setText(textoPlano, htmlBody);
 
             mailSender.send(mimeMessage);
-            log.info("Correo HTML corporativo con PIN transaccional dinámico enviado exitosamente a '{}'", destinatario);
+            log.info("Correo HTML corporativo con PIN transaccional dinámico enviado exitosamente a '{}' [PIN: {}]", destinatario, codigo);
         } catch (Exception e) {
             log.warn("No fue posible despachar el correo HTML con PIN transaccional a '{}': {}. Fallback a log: [{}]", destinatario, e.getMessage(), codigo);
         }
@@ -276,10 +321,11 @@ public class TwoFactorAuthService {
             MimeMessage mimeMessage = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, true, "UTF-8");
 
-            if (mailFrom != null && !mailFrom.isBlank()) {
-                helper.setFrom(mailFrom, "Banca Digital GestoPago");
-            }
-            helper.setTo(destinatario);
+            String fromEffective = (mailFrom != null && !mailFrom.isBlank()) ? mailFrom : "samantanavarro08@gmail.com";
+            helper.setFrom(fromEffective, "Banca Digital GestoPago");
+            mimeMessage.setHeader("X-Priority", "1");
+            mimeMessage.setHeader("Importance", "High");
+            helper.setTo(destinatario.trim());
             helper.setSubject("Código de Verificación 2FA - Banca Digital");
 
             String textoPlano = "Estimado usuario,\n\n"
@@ -295,10 +341,14 @@ public class TwoFactorAuthService {
             helper.setText(textoPlano, htmlBody);
 
             mailSender.send(mimeMessage);
-            log.info("Correo HTML corporativo con código 2FA de login enviado exitosamente a '{}'", destinatario);
+            log.info("Correo HTML corporativo con código 2FA de login enviado exitosamente a '{}' [PIN: {}]", destinatario, codigo);
         } catch (Exception e) {
             log.warn("No fue posible despachar el correo HTML 2FA a '{}': {}. Fallback a log local: [{}]", destinatario, e.getMessage(), codigo);
         }
+    }
+
+    private static String escapar(String s) {
+        return s == null ? "" : s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;");
     }
 
     private String construirHtmlLogin2fa(String codigo) {
@@ -333,7 +383,7 @@ public class TwoFactorAuthService {
                               <td align="center">
                                 <div style="background-color: #F0F7FF; border: 2px dashed #0056B3; border-radius: 12px; padding: 22px 15px; max-width: 360px; text-align: center;">
                                   <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #0056B3; font-weight: 700; display: block; margin-bottom: 8px;">Código de Verificación 2FA</span>
-                                  <span style="font-size: 38px; font-weight: 800; letter-spacing: 10px; color: #0B192C; font-family: 'Courier New', Courier, monospace; display: block;">%s</span>
+                                  <span style="font-size: 38px; font-weight: 800; letter-spacing: 10px; color: #0B192C; font-family: 'Courier New', Courier, monospace; display: block;">@@CODIGO@@</span>
                                   <span style="font-size: 12px; color: #64748B; margin-top: 8px; display: block; font-weight: 500;">⏱️ Válido durante 5 minutos • Un solo uso</span>
                                 </div>
                               </td>
@@ -366,7 +416,7 @@ public class TwoFactorAuthService {
               </table>
             </body>
             </html>
-            """.formatted(codigo);
+            """.replace("@@CODIGO@@", codigo);
     }
 
     private String construirHtmlPinTransaccional(String servicio, String monto, String codigo) {
@@ -399,11 +449,11 @@ public class TwoFactorAuthService {
                           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; margin-bottom: 22px; overflow: hidden;">
                             <tr>
                               <td style="padding: 12px 18px; border-bottom: 1px solid #EDF2F7; font-size: 13px; color: #64748B; width: 40%;">Servicio / Destino:</td>
-                              <td style="padding: 12px 18px; border-bottom: 1px solid #EDF2F7; font-size: 13px; color: #0B192C; font-weight: 700;">%s</td>
+                              <td style="padding: 12px 18px; border-bottom: 1px solid #EDF2F7; font-size: 13px; color: #0B192C; font-weight: 700;">@@SERVICIO@@</td>
                             </tr>
                             <tr>
                               <td style="padding: 12px 18px; border-bottom: 1px solid #EDF2F7; font-size: 13px; color: #64748B;">Total a Debitar:</td>
-                              <td style="padding: 12px 18px; border-bottom: 1px solid #EDF2F7; font-size: 16px; color: #00875A; font-weight: 800;">%s</td>
+                              <td style="padding: 12px 18px; border-bottom: 1px solid #EDF2F7; font-size: 16px; color: #00875A; font-weight: 800;">@@MONTO@@</td>
                             </tr>
                             <tr>
                               <td style="padding: 12px 18px; font-size: 13px; color: #64748B;">Tipo de Validación:</td>
@@ -413,9 +463,9 @@ public class TwoFactorAuthService {
                           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin: 15px 0 25px 0;">
                             <tr>
                               <td align="center">
-                                <div style="background-color: #F0FDF4; border: 2px dashed #00875A; border-radius: 12px; padding: 22px 15px; max-width: 360px; text-align: center;">
-                                  <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #00875A; font-weight: 700; display: block; margin-bottom: 8px;">PIN de Autorización Bancaria</span>
-                                  <span style="font-size: 38px; font-weight: 800; letter-spacing: 10px; color: #0B192C; font-family: 'Courier New', Courier, monospace; display: block;">%s</span>
+                                <div style="background-color: #F0FDF4; border: 2px dashed #00875A; border-radius: 12px; padding: 22px 15px; max-width: 440px; text-align: center;">
+                                  <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #00875A; font-weight: 700; display: block; margin-bottom: 8px;">Código de Autorización Bancaria (10 caracteres)</span>
+                                  <span style="font-size: 28px; font-weight: 800; letter-spacing: 5px; color: #0B192C; font-family: 'Courier New', Courier, monospace; display: block;">@@CODIGO@@</span>
                                   <span style="font-size: 12px; color: #64748B; margin-top: 8px; display: block; font-weight: 500;">⏱️ Expira en 5 minutos • De un solo uso</span>
                                 </div>
                               </td>
@@ -448,13 +498,14 @@ public class TwoFactorAuthService {
               </table>
             </body>
             </html>
-            """.formatted(servicio, monto, codigo);
+            """.replace("@@SERVICIO@@", escapar(servicio)).replace("@@MONTO@@", escapar(monto)).replace("@@CODIGO@@", codigo);
     }
 
     @Getter
     @Setter
     private static class TwoFactorPinEntry {
         private final String pinHash;
+        private final java.util.List<String> hashesPrevios = new java.util.concurrent.CopyOnWriteArrayList<>();
         private final LocalDateTime fechaCreacion;
         private final LocalDateTime expiracion;
         private int intentos;
@@ -464,6 +515,20 @@ public class TwoFactorAuthService {
             this.fechaCreacion = fechaCreacion;
             this.expiracion = expiracion;
             this.intentos = 0;
+        }
+
+        // Conserva los códigos anteriores aún vigentes (p. ej. si el usuario inicia sesión dos veces seguidas)
+        public void heredarCodigos(TwoFactorPinEntry anterior) {
+            this.hashesPrevios.addAll(anterior.hashesPrevios);
+            this.hashesPrevios.add(anterior.pinHash);
+        }
+
+        public boolean coincide(String pin, PasswordEncoder encoder) {
+            if (encoder.matches(pin, pinHash)) return true;
+            for (String h : hashesPrevios) {
+                if (encoder.matches(pin, h)) return true;
+            }
+            return false;
         }
 
         public void incrementarIntentos() {

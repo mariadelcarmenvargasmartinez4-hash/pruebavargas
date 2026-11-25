@@ -24,4 +24,8 @@ public @interface ValidTextoNombre {
     String tipo() default "nombre";
 
     boolean obligatorio() default true;
+
+    int min() default 2;
+
+    int max() default 50;
 }

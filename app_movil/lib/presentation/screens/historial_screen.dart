@@ -128,7 +128,7 @@ class _HistorialScreenState extends State<HistorialScreen> {
                       const Card(
                         child: Padding(
                           padding: EdgeInsets.all(32),
-                          child: LoadingSpinner(mensaje: 'Consultando historial en servidor...'),
+                          child: LoadingSpinner(message: 'Consultando historial en servidor...'),
                         ),
                       )
                     else if (historial.isEmpty)

@@ -40,7 +40,7 @@ public class ClienteEntity {
     private Long id;
 
     // Datos Personales
-    @Column(name = "nombre", nullable = false, length = 50)
+    @Column(name = "nombre", nullable = false, length = 100)
     private String nombre;
 
     @Column(name = "segundo_nombre", length = 50)
@@ -54,6 +54,9 @@ public class ClienteEntity {
 
     @Column(name = "fecha_nacimiento", nullable = false)
     private LocalDate fechaNacimiento;
+
+    @Column(name = "entidad_nacimiento", length = 10)
+    private String entidadNacimiento;
 
     @Column(name = "curp", nullable = false, unique = true, length = 18)
     private String curp;

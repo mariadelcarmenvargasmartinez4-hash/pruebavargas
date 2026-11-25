@@ -46,11 +46,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
 
     if (confirm == true && mounted) {
+      context.read<BancoProvider>().limpiarDatos();
       await context.read<AuthProvider>().logout();
-      if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-      );
     }
   }
 

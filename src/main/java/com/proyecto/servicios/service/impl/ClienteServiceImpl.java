@@ -25,6 +25,7 @@ import com.proyecto.servicios.repositorys.cliente.CuentaRepository;
 import com.proyecto.servicios.repositorys.cliente.DomicilioRepository;
 import com.proyecto.servicios.repositorys.cliente.UsuarioAccesoRepository;
 import com.proyecto.servicios.service.ClienteService;
+import com.proyecto.servicios.service.EntidadFederativaService;
 import com.proyecto.servicios.service.EstadoCivilService;
 import com.proyecto.servicios.service.NacionalidadService;
 import com.proyecto.servicios.service.SexoService;
@@ -68,6 +69,7 @@ public class ClienteServiceImpl implements ClienteService {
     private final SexoService sexoService;
     private final NacionalidadService nacionalidadService;
     private final EstadoCivilService estadoCivilService;
+    private final EntidadFederativaService entidadFederativaService;
     private final MetricasTextoUtil metricasTextoUtil;
 
     @Value("${banco.cuenta.saldo-inicial-default:500.00}")
@@ -82,6 +84,7 @@ public class ClienteServiceImpl implements ClienteService {
                               SexoService sexoService,
                               NacionalidadService nacionalidadService,
                               EstadoCivilService estadoCivilService,
+                              EntidadFederativaService entidadFederativaService,
                               MetricasTextoUtil metricasTextoUtil) {
         this.clienteRepository = clienteRepository;
         this.domicilioRepository = domicilioRepository;
@@ -92,6 +95,7 @@ public class ClienteServiceImpl implements ClienteService {
         this.sexoService = sexoService;
         this.nacionalidadService = nacionalidadService;
         this.estadoCivilService = estadoCivilService;
+        this.entidadFederativaService = entidadFederativaService;
         this.metricasTextoUtil = metricasTextoUtil;
     }
 
@@ -110,6 +114,8 @@ public class ClienteServiceImpl implements ClienteService {
                 () -> new ReglaNegocioException("La nacionalidad '" + dto.getNacionalidad() + "' no es válida o no está activa en el catálogo"));
         DeclarativeAssertUtil.asegurar(estadoCivilService.esValidoYActivo(dto.getEstadoCivil()),
                 () -> new ReglaNegocioException("El estado civil '" + dto.getEstadoCivil() + "' no es válido o no está activo en el catálogo"));
+        DeclarativeAssertUtil.asegurar(entidadFederativaService.esValidoYActivo(dto.getEntidadNacimiento()),
+                () -> new ReglaNegocioException("La entidad federativa de nacimiento '" + dto.getEntidadNacimiento() + "' no es válida o no está activa en el catálogo"));
 
         String curp = dto.getCurp().trim().toUpperCase();
         DeclarativeAssertUtil.prohibir(clienteRepository.existsByCurp(curp),
@@ -393,6 +399,7 @@ public class ClienteServiceImpl implements ClienteService {
                 .apellidoPaterno(dto.getApellidoPaterno().trim())
                 .apellidoMaterno(dto.getApellidoMaterno().trim())
                 .fechaNacimiento(dto.getFechaNacimiento())
+                .entidadNacimiento(dto.getEntidadNacimiento().trim().toUpperCase())
                 .curp(curp)
                 .rfc(rfc)
                 .sexo(dto.getSexo().trim().toUpperCase())
@@ -531,6 +538,7 @@ public class ClienteServiceImpl implements ClienteService {
                 .telefonoMovil(cliente.getTelefonoMovil())
                 .telefonoAlternativo(cliente.getTelefonoAlternativo())
                 .fechaNacimiento(cliente.getFechaNacimiento())
+                .entidadNacimiento(cliente.getEntidadNacimiento())
                 .ocupacion(cliente.getOcupacion())
                 .empresa(cliente.getEmpresa())
                 .ingresoMensual(cliente.getIngresoMensual())

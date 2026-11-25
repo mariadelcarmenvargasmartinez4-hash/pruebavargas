@@ -237,7 +237,7 @@ class PagoServicioServiceImplTest {
                 .idServicio(1L)
                 .idProducto(101L)
                 .monto(new BigDecimal("100.00"))
-                .upe("1234567890")
+                .upe("AB12345678")
                 .esRecargaTelefonica(true)
                 .telefono("5512345678")
                 .estatus("EN_CONCILIACION")
@@ -266,17 +266,17 @@ class PagoServicioServiceImplTest {
                 .idServicio(1L)
                 .idProducto(101L)
                 .monto(new BigDecimal("100.00"))
-                .upe("1234567890")
+                .upe("AB12345678")
                 .esRecargaTelefonica(true)
                 .telefono("5512345678")
                 .estatus("APLICADO")
                 .fechaOperacion(LocalDateTime.now())
                 .build();
 
-        when(pagoServicioRepository.findByUpe("1234567890")).thenReturn(Optional.of(transaccion));
+        when(pagoServicioRepository.findByUpe("AB12345678")).thenReturn(Optional.of(transaccion));
 
         PagoServicioResponseDto response = pagoServicioService.consultarOConciliarPago(
-                PagoConciliacionRequestDto.builder().upe("1234567890").build());
+                PagoConciliacionRequestDto.builder().upe("AB12345678").build());
 
         assertNotNull(response);
         assertEquals("GP-TX-APLICADA-001", response.getFolioTransaccion());
@@ -296,7 +296,7 @@ class PagoServicioServiceImplTest {
         when(cuentaRepository.findByNumeroCuentaWithLock(request.getNumCuenta())).thenReturn(Optional.of(cuentaSinPin));
 
         ReglaNegocioException ex = assertThrows(ReglaNegocioException.class, () -> pagoServicioService.procesarPago(request));
-        assertTrue(ex.getMessage().contains("no tiene un PIN de autorización configurado"));
+        assertTrue(ex.getMessage().contains("No se encontró un PIN dinámico activo ni un PIN configurado"));
 
         verify(gestoPagoSendTxClient, never()).sendTx(anyString(), any());
     }
@@ -310,7 +310,7 @@ class PagoServicioServiceImplTest {
                 .idServicio(1L)
                 .idProducto(101L)
                 .monto(new BigDecimal("100.00"))
-                .upe("1234567890")
+                .upe("AB12345678")
                 .esRecargaTelefonica(true)
                 .telefono("5512345678")
                 .estatus("APLICADO")
@@ -436,9 +436,9 @@ class PagoServicioServiceImplTest {
     @DisplayName("consultarOConciliarPago: UPE no encontrada lanza EntidadNoProcesableException")
     void consultarOConciliarPagoUpeNoEncontrada() {
         PagoConciliacionRequestDto dto = new PagoConciliacionRequestDto();
-        dto.setUpe("1234567890");
+        dto.setUpe("AB12345678");
 
-        when(pagoServicioRepository.findByUpe("1234567890")).thenReturn(Optional.empty());
+        when(pagoServicioRepository.findByUpe("AB12345678")).thenReturn(Optional.empty());
 
         assertThrows(EntidadNoProcesableException.class, () -> pagoServicioService.consultarOConciliarPago(dto));
     }
@@ -447,10 +447,10 @@ class PagoServicioServiceImplTest {
     @DisplayName("consultarOConciliarPago: Transacción en estado APLICADO retorna respuesta idempotente")
     void consultarOConciliarPagoAplicadoRetornaIdempotente() {
         PagoConciliacionRequestDto dto = new PagoConciliacionRequestDto();
-        dto.setUpe("1234567890");
+        dto.setUpe("AB12345678");
 
         PagoServicioEntity transaccion = PagoServicioEntity.builder()
-                .upe("1234567890")
+                .upe("AB12345678")
                 .estatus("APLICADO")
                 .folioTransaccion("FOL-998877")
                 .numCuenta("4815162342")
@@ -460,7 +460,7 @@ class PagoServicioServiceImplTest {
                 .fechaOperacion(LocalDateTime.now())
                 .build();
 
-        when(pagoServicioRepository.findByUpe("1234567890")).thenReturn(Optional.of(transaccion));
+        when(pagoServicioRepository.findByUpe("AB12345678")).thenReturn(Optional.of(transaccion));
 
         PagoServicioResponseDto res = pagoServicioService.consultarOConciliarPago(dto);
 
@@ -474,10 +474,10 @@ class PagoServicioServiceImplTest {
     @DisplayName("consultarOConciliarPago: Transacción en estado EN_CONCILIACION retorna estado actual")
     void consultarOConciliarPagoEnConciliacionRetornaEstado() {
         PagoConciliacionRequestDto dto = new PagoConciliacionRequestDto();
-        dto.setUpe("1234567890");
+        dto.setUpe("AB12345678");
 
         PagoServicioEntity transaccion = PagoServicioEntity.builder()
-                .upe("1234567890")
+                .upe("AB12345678")
                 .estatus("EN_CONCILIACION")
                 .folioTransaccion("FOL-PENDIENTE-1")
                 .numCuenta("4815162342")
@@ -487,7 +487,7 @@ class PagoServicioServiceImplTest {
                 .fechaOperacion(LocalDateTime.now())
                 .build();
 
-        when(pagoServicioRepository.findByUpe("1234567890")).thenReturn(Optional.of(transaccion));
+        when(pagoServicioRepository.findByUpe("AB12345678")).thenReturn(Optional.of(transaccion));
 
         PagoServicioResponseDto res = pagoServicioService.consultarOConciliarPago(dto);
 
@@ -682,10 +682,10 @@ class PagoServicioServiceImplTest {
     @DisplayName("consultarOConciliarPago: Transaccion de recarga telefonica en estado EN_CONCILIACION retorna tipo y telefono")
     void consultarOConciliarPagoRecargaTelefonicaEnConciliacion() {
         PagoConciliacionRequestDto dto = new PagoConciliacionRequestDto();
-        dto.setUpe("1234567890");
+        dto.setUpe("AB12345678");
 
         PagoServicioEntity transaccion = PagoServicioEntity.builder()
-                .upe("1234567890")
+                .upe("AB12345678")
                 .folioTransaccion("FOL-RECARGA-001")
                 .numCuenta("1234567890123456")
                 .idServicio(2L)
@@ -697,7 +697,7 @@ class PagoServicioServiceImplTest {
                 .fechaOperacion(LocalDateTime.now())
                 .build();
 
-        when(pagoServicioRepository.findByUpe("1234567890")).thenReturn(Optional.of(transaccion));
+        when(pagoServicioRepository.findByUpe("AB12345678")).thenReturn(Optional.of(transaccion));
 
         PagoServicioResponseDto res = pagoServicioService.consultarOConciliarPago(dto);
 
@@ -711,10 +711,10 @@ class PagoServicioServiceImplTest {
     @DisplayName("consultarOConciliarPago: Transaccion idempotente de servicio de referencia retorna tipo y referencia")
     void consultarOConciliarPagoServicioReferenciaIdempotente() {
         PagoConciliacionRequestDto dto = new PagoConciliacionRequestDto();
-        dto.setUpe("1234567890");
+        dto.setUpe("AB12345678");
 
         PagoServicioEntity transaccion = PagoServicioEntity.builder()
-                .upe("1234567890")
+                .upe("AB12345678")
                 .folioTransaccion("FOL-SRV-001")
                 .numCuenta("1234567890123456")
                 .idServicio(1L)
@@ -726,7 +726,7 @@ class PagoServicioServiceImplTest {
                 .fechaOperacion(LocalDateTime.now())
                 .build();
 
-        when(pagoServicioRepository.findByUpe("1234567890")).thenReturn(Optional.of(transaccion));
+        when(pagoServicioRepository.findByUpe("AB12345678")).thenReturn(Optional.of(transaccion));
 
         PagoServicioResponseDto res = pagoServicioService.consultarOConciliarPago(dto);
 

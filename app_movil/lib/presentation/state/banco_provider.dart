@@ -35,6 +35,15 @@ class BancoProvider extends ChangeNotifier {
     cargarHistorial(cuenta.numeroCuenta);
   }
 
+  void limpiarDatos() {
+    _cuentas = [];
+    _cuentaSeleccionada = null;
+    _historialTransacciones = [];
+    _errorMessage = null;
+    _successMessage = null;
+    notifyListeners();
+  }
+
   Future<void> cargarDatosDashboard() async {
     _isLoading = true;
     _errorMessage = null;
@@ -43,12 +52,20 @@ class BancoProvider extends ChangeNotifier {
     try {
       final resCuentas = await bancoRepository.getCuentas();
       _cuentas = resCuentas;
-      if (_cuentas.isNotEmpty && _cuentaSeleccionada == null) {
-        _cuentaSeleccionada = _cuentas.first;
+      if (_cuentas.isNotEmpty) {
+        if (_cuentaSeleccionada == null || !_cuentas.any((c) => c.numeroCuenta == _cuentaSeleccionada!.numeroCuenta)) {
+          _cuentaSeleccionada = _cuentas.first;
+        } else {
+          _cuentaSeleccionada = _cuentas.firstWhere((c) => c.numeroCuenta == _cuentaSeleccionada!.numeroCuenta);
+        }
+      } else {
+        _cuentaSeleccionada = null;
       }
 
-      final resProductos = await bancoRepository.getProductos();
-      _productos = resProductos;
+      if (_productos.isEmpty) {
+        final resProductos = await bancoRepository.getProductos();
+        _productos = resProductos;
+      }
 
       if (_cuentaSeleccionada != null) {
         await cargarHistorial(_cuentaSeleccionada!.numeroCuenta);
@@ -79,12 +96,39 @@ class BancoProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> solicitarPinTransaccional({
+    required String numCuenta,
+    required double monto,
+    String? servicio,
+  }) async {
+    _isLoading = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await bancoRepository.solicitarPinTransaccional(
+        numCuenta: numCuenta,
+        monto: monto,
+        servicio: servicio,
+      );
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _isLoading = false;
+      _errorMessage = ApiClient.parseError(e);
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<bool> pagarServicio({
     required int idServicio,
     required int idProducto,
     required double monto,
     required String upe,
     required String telefono,
+    String? referencia,
     required String pin,
   }) async {
     if (_cuentaSeleccionada == null) {
@@ -106,6 +150,7 @@ class BancoProvider extends ChangeNotifier {
         monto: monto,
         upe: upe,
         telefono: telefono,
+        referencia: referencia,
         pin: pin,
       );
 

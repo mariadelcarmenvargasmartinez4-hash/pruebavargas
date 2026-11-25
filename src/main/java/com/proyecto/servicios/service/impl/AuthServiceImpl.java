@@ -78,8 +78,8 @@ public class AuthServiceImpl implements AuthService {
         String nombreCompleto = obtenerNombreCompleto(cliente);
 
         if (dosFactoresRequeridoEnLogin) {
-            twoFactorAuthService.generarPinTemporal(usuario.getUsername());
-            log.info("Doble factor de autenticación (2FA) activado para usuario '{}'. PIN generado y despachado por correo electrónico.", usuario.getUsername());
+            twoFactorAuthService.generarPinTemporal(usuario.getUsername(), false);
+            log.info("Doble factor de autenticación (2FA) activado para usuario '{}'. PIN generado; correo en envío.", usuario.getUsername());
 
             return LoginResponseDto.builder()
                     .codigo(0)

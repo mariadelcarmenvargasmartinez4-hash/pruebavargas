@@ -79,8 +79,12 @@ public class CuentaController {
         Optional.ofNullable(numeroCuenta).filter(Predicate.not(String::isBlank)).ifPresent(securityService::validarAccesoCuenta);
         Optional.ofNullable(clienteId).ifPresent(securityService::validarAccesoCliente);
 
+        Long clienteIdFiltro = clienteId != null
+                ? clienteId
+                : securityService.obtenerClienteIdAutenticadoSiAplica().orElse(null);
+
         CuentaConsultaFiltroRecord filtro = new CuentaConsultaFiltroRecord(
-                numeroCuenta, clienteId, estatus, soloActivas, page, size, sortBy, sortDir, pack);
+                numeroCuenta, clienteIdFiltro, estatus, soloActivas, page, size, sortBy, sortDir, pack);
 
         PaginaResponseRecord<CuentaBancariaDto> pagina = cuentaService.buscarCuentasPaginadas(filtro);
         return ResponseEntity.ok(GenericResponse.exito(pagina, "Consulta paginada de cuentas realizada con éxito"));

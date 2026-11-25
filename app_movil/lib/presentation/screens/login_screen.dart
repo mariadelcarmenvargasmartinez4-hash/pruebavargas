@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../core/constants/api_constants.dart';
+import '../../core/network/api_client.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive_util.dart';
 import '../state/auth_provider.dart';
 import '../widgets/custom_button.dart';
 import '../widgets/custom_text_field.dart';
 import 'dashboard_screen.dart';
+import 'register_screen.dart';
 import 'two_factor_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -39,27 +42,91 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (!mounted) return;
 
-    if (success) {
-      if (authProvider.status == AuthStatus.twoFactorRequired) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const TwoFactorScreen()),
-        );
-      } else if (authProvider.status == AuthStatus.authenticated) {
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(builder: (_) => const DashboardScreen()),
-        );
-      }
-    } else {
-      if (authProvider.errorMessage != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(authProvider.errorMessage!),
-            backgroundColor: AppTheme.errorColor,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+    if (!success && authProvider.errorMessage != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(authProvider.errorMessage!),
+          backgroundColor: AppTheme.errorColor,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
+  }
+
+  void _mostrarConfigServidor(BuildContext context) {
+    final customController = TextEditingController(text: ApiConstants.activeBaseUrl);
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Conexión con el Servidor Backend', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Servidor activo actualmente:', style: TextStyle(fontSize: 12, color: Colors.grey)),
+            Text(ApiConstants.activeBaseUrl, style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primaryColor)),
+            const Divider(height: 24),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.wifi, color: AppTheme.primaryColor),
+              title: const Text('Wi-Fi Local de tu PC'),
+              subtitle: const Text('http://192.168.100.10:8088'),
+              onTap: () {
+                context.read<ApiClient>().setBaseUrl(ApiConstants.baseUrlWifi);
+                setState(() {});
+                Navigator.of(ctx).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Conectado a Wi-Fi Local (192.168.100.10:8088)')),
+                );
+              },
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.cloud_outlined, color: AppTheme.primaryColor),
+              title: const Text('Nube Render'),
+              subtitle: const Text(ApiConstants.baseUrlRender),
+              onTap: () {
+                context.read<ApiClient>().setBaseUrl(ApiConstants.baseUrlRender);
+                setState(() {});
+                Navigator.of(ctx).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Conectado a Nube Render')),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: customController,
+              decoration: const InputDecoration(
+                labelText: 'O escribir IP personalizada:',
+                hintText: 'http://192.168.X.X:8088',
+                isDense: true,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final newUrl = customController.text.trim();
+              if (newUrl.isNotEmpty) {
+                context.read<ApiClient>().setBaseUrl(newUrl);
+                setState(() {});
+                Navigator.of(ctx).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Conectado a: $newUrl')),
+                );
+              }
+            },
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -84,6 +151,37 @@ class _LoginScreenState extends State<LoginScreen> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        // Indicador de conexión / configuración de servidor
+                        Align(
+                          alignment: Alignment.topRight,
+                          child: InkWell(
+                            onTap: () => _mostrarConfigServidor(context),
+                            borderRadius: BorderRadius.circular(20),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade50,
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: Colors.blue.shade200),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.dns_rounded, size: 14, color: Colors.blue.shade700),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    ApiConstants.activeBaseUrl.replaceFirst('http://', '').replaceFirst('https://', ''),
+                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blue.shade800),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Icon(Icons.edit, size: 12, color: Colors.blue.shade700),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+
                         // Logo / Icono Bancario
                         Container(
                           width: 64,
@@ -118,49 +216,6 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                         ),
                         const SizedBox(height: 28),
-
-                        // Selector de Dispositivo (para comprobar Control de Sesión Única)
-                        Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade100,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: ChoiceChip(
-                                  label: const Center(child: Text('Móvil')),
-                                  selected: authProvider.dispositivoActual == 'MOVIL',
-                                  onSelected: (_) => authProvider.setDispositivo('MOVIL'),
-                                  selectedColor: AppTheme.primaryColor,
-                                  labelStyle: TextStyle(
-                                    color: authProvider.dispositivoActual == 'MOVIL'
-                                        ? Colors.white
-                                        : AppTheme.textSecondary,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: ChoiceChip(
-                                  label: const Center(child: Text('Web / Escritorio')),
-                                  selected: authProvider.dispositivoActual == 'WEB',
-                                  onSelected: (_) => authProvider.setDispositivo('WEB'),
-                                  selectedColor: AppTheme.primaryColor,
-                                  labelStyle: TextStyle(
-                                    color: authProvider.dispositivoActual == 'WEB'
-                                        ? Colors.white
-                                        : AppTheme.textSecondary,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 20),
 
                         // Campo Correo / Usuario
                         CustomTextField(
@@ -206,15 +261,36 @@ class _LoginScreenState extends State<LoginScreen> {
                           isLoading: authProvider.status == AuthStatus.loading,
                           onPressed: _submitLogin,
                         ),
+                        const SizedBox(height: 12),
 
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Protegido mediante cifrado BCrypt, JWT y Sesión Única en Servidor',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: AppTheme.textSecondary,
-                          ),
+                        // Enlace para Crear Nueva Cuenta
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Text(
+                              '¿Aún no tienes cuenta?',
+                              style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                            ),
+                            TextButton(
+                              onPressed: () async {
+                                final nuevoCorreo = await Navigator.of(context).push<String>(
+                                  MaterialPageRoute(builder: (_) => const RegisterScreen()),
+                                );
+                                if (nuevoCorreo != null && nuevoCorreo.isNotEmpty) {
+                                  setState(() {
+                                    _correoController.text = nuevoCorreo;
+                                  });
+                                }
+                              },
+                              child: const Text(
+                                'Crear cuenta bancaria',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: AppTheme.primaryColor,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),

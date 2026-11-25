@@ -29,6 +29,11 @@ class ApiClient {
     _setupInterceptors();
   }
 
+  void setBaseUrl(String newUrl) {
+    dio.options.baseUrl = newUrl;
+    ApiConstants.activeBaseUrl = newUrl;
+  }
+
   void _setupInterceptors() {
     dio.interceptors.add(
       InterceptorsWrapper(
@@ -44,8 +49,13 @@ class ApiClient {
           return handler.next(response);
         },
         onError: (DioException error, handler) async {
+          final path = error.requestOptions.path;
+          final isAuthEndpoint = path.contains('/auth/login') ||
+              path.contains('/auth/2fa') ||
+              path.contains('/clientes');
+
           // Detección de control de sesión única respaldada por el servidor (401 Unauthorized)
-          if (error.response?.statusCode == 401) {
+          if (!isAuthEndpoint && error.response?.statusCode == 401) {
             final data = error.response?.data;
             String msg = 'Sesión no válida o expirada.';
             if (data is Map && data.containsKey('mensaje')) {
@@ -88,5 +98,39 @@ class ApiClient {
       }
     }
     return error.toString();
+  }
+
+  // Extrae mapa de errores específicos por campo ({ "campo": "mensaje" }) devueltos por el backend (HTTP 400/409/422)
+  static Map<String, String> extractFieldErrors(dynamic error) {
+    final Map<String, String> fieldErrors = {};
+    if (error is DioException && error.response != null) {
+      final data = error.response?.data;
+      if (data is Map) {
+        if (data.containsKey('datos') && data['datos'] is Map) {
+          final datos = data['datos'] as Map;
+          datos.forEach((key, value) {
+            if (value != null) {
+              fieldErrors[key.toString()] = value.toString();
+            }
+          });
+        }
+
+        // Mapeo contextual de códigos 409 Conflict o duplicidades
+        final statusCode = error.response?.statusCode;
+        final mensaje = (data['mensaje'] ?? data['message'] ?? '').toString();
+        final msgLower = mensaje.toLowerCase();
+
+        if (statusCode == 409 || msgLower.contains('ya está registrado') || msgLower.contains('duplicad')) {
+          if (msgLower.contains('curp')) {
+            fieldErrors['curp'] = mensaje;
+          } else if (msgLower.contains('rfc')) {
+            fieldErrors['rfc'] = mensaje;
+          } else if (msgLower.contains('correo')) {
+            fieldErrors['correoElectronico'] = mensaje;
+          }
+        }
+      }
+    }
+    return fieldErrors;
   }
 }

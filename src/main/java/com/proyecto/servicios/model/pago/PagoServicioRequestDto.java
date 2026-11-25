@@ -59,8 +59,8 @@ public class PagoServicioRequestDto implements Serializable {
     private BigDecimal precio;
 
     @NotBlank(message = "El Identificador Único (UPE) es obligatorio")
-    @Pattern(regexp = "^\\d{10}$", message = "El UPE debe ser un identificador numérico exactamente de 10 dígitos")
-    @Schema(description = "Identificador Único (UPE) de 10 dígitos numéricos", example = "1234567890", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Pattern(regexp = "^(?=.*[A-Za-z])(?=.*\\d)[A-Za-z0-9]{10}$", message = "El UPE debe ser un identificador de exactamente 10 caracteres que combine letras y números")
+    @Schema(description = "Identificador Único (UPE) de 10 caracteres alfanuméricos (números y letras)", example = "GP94A8B2C1", requiredMode = Schema.RequiredMode.REQUIRED)
     private String upe;
 
     @NotNull(message = "La bandera de tipo de pago es obligatoria (true=recarga telefónica, false=servicio con referencia)")
@@ -78,10 +78,10 @@ public class PagoServicioRequestDto implements Serializable {
     @Schema(description = "Referencia de pago del servicio (obligatorio si bandera = false)", example = "REF-AGUA-987654")
     private String referencia;
 
-    @NotBlank(message = "El PIN o pass seguro de verificación es obligatorio")
-    @Pattern(regexp = "^\\d{4,8}$", message = "El PIN o pass seguro debe ser numérico y contener entre 4 y 8 dígitos")
+    @NotBlank(message = "El PIN o código seguro de verificación es obligatorio")
+    @Pattern(regexp = "^(?:(?=.*[A-Za-z])(?=.*\\d)[A-Za-z0-9]{10}|\\d{4,8})$", message = "El código de autorización debe contener exactamente 10 caracteres combinando letras y números")
     @JsonAlias({"passSeguro", "codigoVerificacion", "pin"})
-    @Schema(description = "PIN o Pass seguro (código de verificación de un solo uso asignado al cliente)", example = "1234", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "Código dinámico de autorización de 10 caracteres alfanuméricos (letras y números)", example = "A9K3M7P2X4", requiredMode = Schema.RequiredMode.REQUIRED)
     private String pin;
 
     @Schema(description = "Pass seguro alternativo (alias de PIN)", example = "1234")

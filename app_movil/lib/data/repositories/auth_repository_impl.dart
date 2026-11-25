@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import '../../core/storage/secure_storage_service.dart';
 import '../../domain/entities/user_session.dart';
 import '../../domain/repositories/auth_repository.dart';
@@ -59,23 +60,55 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
+  Future<Map<String, dynamic>> registrarCliente(Map<String, dynamic> datosCliente) async {
+    return await remoteDataSource.registrarCliente(datosCliente);
+  }
+
+  @override
   Future<void> logout() async {
     await remoteDataSource.logout();
     await storageService.clearAll();
   }
 
   @override
-  Future<bool> checkActiveSession() async {
+  Future<UserSession?> checkActiveSession() async {
     final token = await storageService.getToken();
     final sessionId = await storageService.getSessionId();
-    if (token == null || sessionId == null) return false;
+    final username = await storageService.getUsername();
+    final dispositivo = await storageService.getDeviceType() ?? 'MOVIL';
+
+    if (token == null || token.isEmpty || sessionId == null || sessionId.isEmpty) {
+      return null;
+    }
 
     try {
       final res = await remoteDataSource.getSesion();
-      return res['codigo'] == 0 || (res.containsKey('datos') && res['datos'] != null);
-    } catch (_) {
+      if (res['codigo'] == 0 || (res.containsKey('datos') && res['datos'] != null)) {
+        final datos = res['datos'];
+        final nombreCompleto = (datos is Map && datos['username'] != null)
+            ? datos['username'].toString()
+            : (username ?? 'Usuario');
+
+        return UserSession(
+          username: username ?? '',
+          token: token,
+          sessionId: sessionId,
+          clienteId: null,
+          nombreCompleto: nombreCompleto,
+          dispositivo: dispositivo,
+          requiere2fa: false,
+        );
+      }
       await storageService.clearAll();
-      return false;
+      return null;
+    } on DioException catch (e) {
+      // Solo limpiar almacenamiento si el servidor explícitamente rechazó la sesión con 401
+      if (e.response?.statusCode == 401) {
+        await storageService.clearAll();
+      }
+      return null;
+    } catch (_) {
+      return null;
     }
   }
 }

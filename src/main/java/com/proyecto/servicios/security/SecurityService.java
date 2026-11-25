@@ -30,6 +30,18 @@ public class SecurityService {
         this.cuentaRepository = cuentaRepository;
     }
 
+    public Optional<Long> obtenerClienteIdAutenticadoSiAplica() {
+        return Optional.ofNullable(SecurityContextHolder.getContext().getAuthentication())
+                .filter(Authentication::isAuthenticated)
+                .filter(auth -> !"anonymousUser".equals(auth.getPrincipal()))
+                .filter(auth -> auth.getAuthorities().stream()
+                        .noneMatch(a -> a.getAuthority().equalsIgnoreCase("ROLE_ADMIN")
+                                || a.getAuthority().equalsIgnoreCase("ROLE_EMPLEADO")))
+                .flatMap(auth -> usuarioRepository.findByUsername(auth.getName()))
+                .map(UsuarioAccesoEntity::getCliente)
+                .map(ClienteEntity::getId);
+    }
+
     public void validarAccesoCliente(Long clienteId) {
         Optional.ofNullable(SecurityContextHolder.getContext().getAuthentication())
                 .filter(Authentication::isAuthenticated)

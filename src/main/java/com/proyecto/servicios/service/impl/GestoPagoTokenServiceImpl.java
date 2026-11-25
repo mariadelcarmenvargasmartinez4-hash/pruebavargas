@@ -21,13 +21,13 @@ public class GestoPagoTokenServiceImpl implements GestoPagoTokenService {
     private final GestoPagoTokenRepository tokenRepository;
     private final GestoPagoTokenMapper tokenMapper;
 
-    @Value("${gestopago.auth.id-distribuidor}")
+    @Value("${gestopago.auth.id-distribuidor:83}")
     private Integer idDistribuidor;
 
-    @Value("${gestopago.auth.codigo-dispositivo}")
+    @Value("${gestopago.auth.codigo-dispositivo:GPS83-TPV-17}")
     private String codigoDispositivo;
 
-    @Value("${gestopago.auth.password}")
+    @Value("${gestopago.auth.password:12345678}")
     private String password;
 
     public GestoPagoTokenServiceImpl(GestoPagoAuthClient gestoPagoAuthClient,
@@ -53,6 +53,11 @@ public class GestoPagoTokenServiceImpl implements GestoPagoTokenService {
                                 .findByIdDistribuidorAndCodigoDispositivo(idDistribuidor, codigoDispositivo)
                                 .map(existing -> {
                                     tokenMapper.updateEntity(response, existing);
+                                    if (existing.getExpiresIn() == null || existing.getExpiresIn() <= 0) {
+                                        existing.setExpiresIn(3600L);
+                                    }
+                                    existing.setActivo(true);
+                                    existing.setFechaActualizacion(java.time.LocalDateTime.now());
                                     return existing;
                                 })
                                 .orElseGet(() -> {
@@ -60,6 +65,11 @@ public class GestoPagoTokenServiceImpl implements GestoPagoTokenService {
                                     nuevo.setIdDistribuidor(idDistribuidor);
                                     nuevo.setCodigoDispositivo(codigoDispositivo);
                                     nuevo.setActivo(true);
+                                    if (nuevo.getExpiresIn() == null || nuevo.getExpiresIn() <= 0) {
+                                        nuevo.setExpiresIn(3600L);
+                                    }
+                                    nuevo.setFechaCreacion(java.time.LocalDateTime.now());
+                                    nuevo.setFechaActualizacion(java.time.LocalDateTime.now());
                                     return nuevo;
                                 });
 
@@ -74,6 +84,12 @@ public class GestoPagoTokenServiceImpl implements GestoPagoTokenService {
 
     @Override
     public Optional<GestoPagoToken> obtenerTokenActivo(Integer idDistribuidor, String codigoDispositivo) {
-        return tokenRepository.findByIdDistribuidorAndCodigoDispositivo(idDistribuidor, codigoDispositivo);
+        Optional<GestoPagoToken> tokenOpt = tokenRepository.findByIdDistribuidorAndCodigoDispositivo(idDistribuidor, codigoDispositivo);
+        if (tokenOpt.isEmpty() || !tokenOpt.get().esVigente()) {
+            log.info("Token GestoPago ausente o vencido en BD para distribuidor={}. Ejecutando renovación inmediata...", idDistribuidor);
+            renovarToken();
+            tokenOpt = tokenRepository.findByIdDistribuidorAndCodigoDispositivo(idDistribuidor, codigoDispositivo);
+        }
+        return tokenOpt;
     }
 }

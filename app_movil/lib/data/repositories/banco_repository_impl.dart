@@ -31,6 +31,20 @@ class BancoRepositoryImpl implements BancoRepository {
   }
 
   @override
+  Future<void> solicitarPinTransaccional({
+    required String numCuenta,
+    required double monto,
+    String? servicio,
+  }) async {
+    final payload = {
+      'numCuenta': numCuenta,
+      'monto': monto,
+      'servicio': servicio ?? 'Pago de Servicios',
+    };
+    await remoteDataSource.solicitarPinTransaccional(payload);
+  }
+
+  @override
   Future<Map<String, dynamic>> procesarPago({
     required String numCuenta,
     required int idServicio,
@@ -38,6 +52,7 @@ class BancoRepositoryImpl implements BancoRepository {
     required double monto,
     required String upe,
     required String telefono,
+    String? referencia,
     required String pin,
   }) async {
     final payload = {
@@ -47,8 +62,9 @@ class BancoRepositoryImpl implements BancoRepository {
       'monto': monto,
       'upe': upe,
       'telefono': telefono,
+      'referencia': (referencia != null && referencia.trim().isNotEmpty) ? referencia.trim() : (telefono.isNotEmpty ? telefono : 'REF$upe'),
       'pin': pin,
-      'bandera': true,
+      'bandera': telefono.isNotEmpty && (referencia == null || referencia.trim().isEmpty),
     };
     return await remoteDataSource.procesarPago(payload);
   }

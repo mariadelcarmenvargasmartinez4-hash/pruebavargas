@@ -34,8 +34,8 @@ public record PagoServicioRequestRecord(
                 "El identificador del producto (idProducto) es obligatorio y debe ser mayor a cero");
         DeclarativeAssertUtil.asegurar(monto != null && monto.compareTo(BigDecimal.ZERO) > 0,
                 "El precio o monto a pagar debe ser mayor a cero");
-        DeclarativeAssertUtil.asegurar(upe != null && upe.matches("^\\d{10}$"),
-                "El Identificador Único (UPE) es obligatorio y debe tener exactamente 10 dígitos numéricos");
+        DeclarativeAssertUtil.asegurar(upe != null && upe.matches("^(?=.*[A-Za-z])(?=.*\\d)[A-Za-z0-9]{10}$"),
+                "El Identificador Único (UPE) es obligatorio y debe tener exactamente 10 caracteres que combinen letras y números");
         DeclarativeAssertUtil.asegurar(bandera != null,
                 "La bandera de tipo de pago (true = recarga/teléfono, false = servicio con referencia) es obligatoria");
 
@@ -50,8 +50,8 @@ public record PagoServicioRequestRecord(
                 !Boolean.FALSE.equals(bandera) || (referencia != null && !referencia.trim().isBlank()),
                 "Para pago de servicios con referencia (bandera = false), el campo referencia es obligatorio");
 
-        DeclarativeAssertUtil.asegurar(pin != null && pin.trim().matches("^\\d{4,8}$"),
-                "El PIN o pass seguro de autenticación es obligatorio y debe contener entre 4 y 8 dígitos numéricos");
+        DeclarativeAssertUtil.asegurar(pin != null && pin.trim().matches("^(?:(?=.*[A-Za-z])(?=.*\\d)[A-Za-z0-9]{10}|\\d{4,8})$"),
+                "El código de autorización es obligatorio y debe contener 10 caracteres combinando letras y números");
 
         numCuenta = numCuenta.trim();
         upe = upe.trim();

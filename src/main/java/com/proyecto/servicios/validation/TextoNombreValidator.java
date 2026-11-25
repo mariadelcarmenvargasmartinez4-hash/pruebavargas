@@ -16,6 +16,8 @@ public class TextoNombreValidator implements ConstraintValidator<ValidTextoNombr
 
     private String tipo;
     private boolean obligatorio;
+    private int min;
+    private int max;
 
     private static final Set<String> PALABRAS_PROHIBIDAS = Set.of(
             "EXECUTE", "EXEC", "SELECT", "INSERT", "UPDATE", "DELETE", "DROP", "ALTER",
@@ -30,6 +32,8 @@ public class TextoNombreValidator implements ConstraintValidator<ValidTextoNombr
     public void initialize(ValidTextoNombre constraintAnnotation) {
         this.tipo = constraintAnnotation.tipo();
         this.obligatorio = constraintAnnotation.obligatorio();
+        this.min = constraintAnnotation.min();
+        this.max = constraintAnnotation.max();
     }
 
     @Override
@@ -48,10 +52,10 @@ public class TextoNombreValidator implements ConstraintValidator<ValidTextoNombr
                         "El " + tipo + " no puede terminar con espacios"),
                 new ReglaValidacion(v -> v.contains("  "),
                         "No se permiten multiples espacios internos consecutivos"),
-                new ReglaValidacion(v -> v.trim().length() < 2,
-                        "El " + tipo + " debe tener al menos 2 caracteres reales"),
-                new ReglaValidacion(v -> v.length() > 50,
-                        "El " + tipo + " no puede exceder 50 caracteres"),
+                new ReglaValidacion(v -> v.trim().length() < min,
+                        "El " + tipo + " debe tener al menos " + min + " caracteres reales"),
+                new ReglaValidacion(v -> v.length() > max,
+                        "El " + tipo + " no puede exceder " + max + " caracteres"),
                 new ReglaValidacion(v -> !v.matches("^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ ]+$"),
                         "El " + tipo + " solo puede aceptar letras"),
                 new ReglaValidacion(v -> Arrays.stream(v.trim().split("\\s+"))

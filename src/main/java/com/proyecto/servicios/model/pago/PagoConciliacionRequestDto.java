@@ -22,7 +22,7 @@ import java.io.Serializable;
 public class PagoConciliacionRequestDto implements Serializable {
 
     @NotBlank(message = "El Identificador Único (UPE) es obligatorio")
-    @Pattern(regexp = "^\\d{10}$", message = "El Identificador Único (UPE) debe tener exactamente 10 dígitos numéricos")
-    @Schema(description = "Identificador único de 10 dígitos de la transacción", example = "1234567890")
+    @Pattern(regexp = "^[a-zA-Z0-9]{10}$", message = "El Identificador Único (UPE) debe tener exactamente 10 caracteres alfanuméricos (números y letras)")
+    @Schema(description = "Identificador único de 10 caracteres alfanuméricos de la transacción", example = "GP94A8B2C1")
     private String upe;
 }

@@ -15,7 +15,9 @@ abstract class AuthRepository {
     required String dispositivo,
   });
 
+  Future<Map<String, dynamic>> registrarCliente(Map<String, dynamic> datosCliente);
+
   Future<void> logout();
 
-  Future<bool> checkActiveSession();
+  Future<UserSession?> checkActiveSession();
 }

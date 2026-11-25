@@ -12,7 +12,11 @@ import org.springframework.web.bind.annotation.RequestHeader;
  * FeignClient 3 (Envío de Transacciones - SendTx):
  * Cliente OpenFeign para enviar los datos del pago firmado y encriptado con AES hacia el proveedor GestoPago.
  */
-@FeignClient(name = "gestoPagoSendTxClient", url = "${gestopago.sendtx.url:${productos.api.url}}")
+@FeignClient(
+        name = "gestoPagoSendTxClient",
+        url = "${gestopago.sendtx.url:${productos.api.url}}",
+        configuration = GestoPagoSendTxClientConfig.class
+)
 public interface GestoPagoSendTxClient {
 
     /**
@@ -24,7 +28,7 @@ public interface GestoPagoSendTxClient {
      */
     @PostMapping(value = "/sistema/service/sendTx.do",
                  consumes = MediaType.APPLICATION_JSON_VALUE,
-                 produces = MediaType.APPLICATION_JSON_VALUE)
+                 produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_XML_VALUE, MediaType.TEXT_XML_VALUE})
     GestoPagoSendTxResponse sendTx(
             @RequestHeader("Authorization") String authorization,
             @RequestBody GestoPagoSendTxRequest request

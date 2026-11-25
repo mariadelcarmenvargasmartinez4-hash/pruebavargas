@@ -83,6 +83,7 @@ public class PagoServicioController {
     })
     public ResponseEntity<GenericResponse<PagoServicioResponseDto>> procesarPago(
             @Valid @RequestBody PagoServicioRequestDto request) {
+        securityService.validarAccesoCuenta(request.getNumCuenta());
         PagoServicioResponseDto respuesta = pagoServicioService.procesarPago(request);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(GenericResponse.exito(respuesta, "Pago de servicio recibido y procesado exitosamente"));

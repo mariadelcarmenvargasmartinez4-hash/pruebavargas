@@ -70,6 +70,9 @@ public class ClienteRegistroResponseDto {
     @Schema(description = "Fecha de nacimiento registrada", example = "1990-05-15")
     private LocalDate fechaNacimiento;
 
+    @Schema(description = "Entidad federativa de nacimiento", example = "DF")
+    private String entidadNacimiento;
+
     @Schema(description = "Ocupación", example = "Ingeniero de Software")
     private String ocupacion;
 
