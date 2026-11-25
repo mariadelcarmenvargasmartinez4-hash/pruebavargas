@@ -12,9 +12,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 
+import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -131,6 +133,124 @@ public class TwoFactorAuthService {
         activeCodes.remove(userKey);
         log.info("PIN temporal 2FA validado exitosamente para el usuario '{}'", username);
         return true;
+    }
+
+    /**
+     * Genera y despacha un PIN dinámico de un solo uso (OTP) para autorizar una transacción financiera específica.
+     * Se almacena bajo una clave única por cuenta/operación y se envía al correo registrado del titular.
+     *
+     * @param destinatarioCorreo Correo electrónico del cliente titular
+     * @param claveOperacion     Número de cuenta o identificador de operación
+     * @param monto              Importe de la transacción
+     * @param servicio           Nombre del servicio o concepto a pagar
+     * @return El PIN plano de 6 dígitos generado
+     */
+    public String generarPinTransaccional(String destinatarioCorreo, String claveOperacion, BigDecimal monto, String servicio) {
+        if (destinatarioCorreo == null || destinatarioCorreo.isBlank()) {
+            throw new ReglaNegocioException("El correo del cliente es requerido para despachar el PIN dinámico de autorización");
+        }
+        if (claveOperacion == null || claveOperacion.isBlank()) {
+            throw new ReglaNegocioException("La clave de operación o número de cuenta es requerida");
+        }
+
+        String key = "TX_" + claveOperacion.trim().toLowerCase();
+        int pinNumero = 100000 + secureRandom.nextInt(900000); // 6 dígitos numéricos
+        String pinPlano = String.valueOf(pinNumero);
+
+        LocalDateTime ahora = LocalDateTime.now();
+        LocalDateTime expiracion = ahora.plus(EXPIRACION_MINUTOS, ChronoUnit.MINUTES);
+
+        TwoFactorPinEntry entry = new TwoFactorPinEntry(passwordEncoder.encode(pinPlano), ahora, expiracion);
+        activeCodes.put(key, entry);
+
+        despacharPinTransaccional(destinatarioCorreo, pinPlano, monto, servicio);
+        return pinPlano;
+    }
+
+    /**
+     * Verifica si existe un PIN dinámico activo y no expirado para la operación dada.
+     */
+    public boolean tienePinTransaccionalActivo(String claveOperacion) {
+        if (claveOperacion == null || claveOperacion.isBlank()) return false;
+        String key = "TX_" + claveOperacion.trim().toLowerCase();
+        TwoFactorPinEntry entry = activeCodes.get(key);
+        if (entry == null) return false;
+        if (LocalDateTime.now().isAfter(entry.getExpiracion())) {
+            activeCodes.remove(key);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Valida el PIN dinámico de transacción ingresado y, de ser correcto, lo consume de inmediato (OTP).
+     *
+     * @param claveOperacion Identificador de la cuenta u operación
+     * @param pinIngresado   PIN de 6 dígitos introducido por el usuario
+     * @return true si es válido y no expirado
+     */
+    public boolean validarPinTransaccional(String claveOperacion, String pinIngresado) {
+        if (claveOperacion == null || pinIngresado == null) return false;
+        String key = "TX_" + claveOperacion.trim().toLowerCase();
+        TwoFactorPinEntry entry = activeCodes.get(key);
+        if (entry == null) return false;
+
+        if (LocalDateTime.now().isAfter(entry.getExpiracion())) {
+            activeCodes.remove(key);
+            return false;
+        }
+
+        if (entry.getIntentos() >= MAX_INTENTOS) {
+            activeCodes.remove(key);
+            return false;
+        }
+
+        boolean coincide = passwordEncoder.matches(pinIngresado.trim(), entry.getPinHash());
+        if (!coincide) {
+            entry.incrementarIntentos();
+            if (MAX_INTENTOS - entry.getIntentos() <= 0) {
+                activeCodes.remove(key);
+            }
+            return false;
+        }
+
+        // Éxito: One-Time Password consumido de inmediato
+        activeCodes.remove(key);
+        log.info("PIN dinámico transaccional validado y consumido exitosamente para operación '{}'", claveOperacion);
+        return true;
+    }
+
+    private void despacharPinTransaccional(String destinatario, String codigo, BigDecimal monto, String servicio) {
+        String servicioNombre = (servicio != null && !servicio.isBlank()) ? servicio : "Servicio GestoPago";
+        String montoStr = (monto != null) ? String.format(Locale.ROOT, "$%.2f MXN", monto) : "";
+
+        if (mailSender == null) {
+            log.info("Canal SMTP no configurado: El PIN dinámico de autorización para '{}' es [{}] (Pago de {} por {}). Expira en {} minutos",
+                    destinatario, codigo, servicioNombre, montoStr, EXPIRACION_MINUTOS);
+            return;
+        }
+        try {
+            SimpleMailMessage mensaje = new SimpleMailMessage();
+            if (mailFrom != null && !mailFrom.isBlank()) {
+                mensaje.setFrom(mailFrom);
+            }
+            mensaje.setTo(destinatario);
+            mensaje.setSubject("PIN de Autorización de Transacción - Banca Digital");
+            mensaje.setText("Estimado cliente,\n\n"
+                    + "Se ha solicitado una autorización de pago en su cuenta de Banca Digital:\n\n"
+                    + "   • Servicio/Concepto: " + servicioNombre + "\n"
+                    + (montoStr.isEmpty() ? "" : "   • Importe: " + montoStr + "\n")
+                    + "   • PIN Dinámico de Autorización: " + codigo + "\n\n"
+                    + "Este PIN es de un solo uso y expirará en " + EXPIRACION_MINUTOS + " minutos.\n"
+                    + "Por motivos de seguridad, nunca comparta este código con nadie.\n\n"
+                    + "Si usted no solicitó esta operación, por favor contacte a soporte inmediatamente.\n\n"
+                    + "Atentamente,\n"
+                    + "Seguridad Bancaria - GestoPago Digital");
+            mailSender.send(mensaje);
+            log.info("PIN transaccional dinámico enviado exitosamente por correo a '{}'", destinatario);
+        } catch (Exception e) {
+            log.warn("No fue posible despachar el correo con PIN transaccional a '{}': {}. Fallback a log: [{}]", destinatario, e.getMessage(), codigo);
+        }
     }
 
     public long getExpiracionSegundos() {

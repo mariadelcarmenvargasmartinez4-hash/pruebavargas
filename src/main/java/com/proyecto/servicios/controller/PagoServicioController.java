@@ -4,6 +4,7 @@ import com.proyecto.servicios.model.common.GenericResponse;
 import com.proyecto.servicios.model.pago.PagoConciliacionRequestDto;
 import com.proyecto.servicios.model.pago.PagoServicioRequestDto;
 import com.proyecto.servicios.model.pago.PagoServicioResponseDto;
+import com.proyecto.servicios.model.pago.SolicitarPinTransaccionalDto;
 import com.proyecto.servicios.service.PagoServicioService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -51,6 +52,24 @@ public class PagoServicioController {
         return ResponseEntity.ok(GenericResponse.exito(
                 "Para realizar un pago de servicio o recarga, envíe una petición POST a /pagos con el cuerpo JSON correspondiente. Visite /swagger-ui/index.html para probar interactivamente.",
                 "API de Pagos de Servicios activa"));
+    }
+
+    @PostMapping(value = "/pin-transaccional/solicitar", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @Operation(summary = "Paso 0: Solicitar PIN dinámico transaccional al correo del cliente",
+               description = "Genera un PIN de autorización de un solo uso (OTP) de 6 dígitos con vigencia de 5 minutos y lo despacha de forma segura al correo del titular para autorizar la transacción.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "PIN dinámico generado y despachado al correo exitosamente"),
+            @ApiResponse(responseCode = "400", description = "Datos de petición inválidos o saldo insuficiente"),
+            @ApiResponse(responseCode = "403", description = "Acceso denegado a cuentas de otros titulares (IDOR)"),
+            @ApiResponse(responseCode = "422", description = "Cuenta bancaria no encontrada o inactiva")
+    })
+    public ResponseEntity<GenericResponse<String>> solicitarPinTransaccional(
+            @Valid @RequestBody SolicitarPinTransaccionalDto request) {
+        securityService.validarAccesoCuenta(request.numCuenta());
+        pagoServicioService.solicitarPinTransaccional(request.numCuenta(), request.monto(), request.servicio());
+        return ResponseEntity.ok(GenericResponse.exito(
+                "Se ha generado y enviado un PIN dinámico de autorización a su correo electrónico registrado. Ingréselo para autorizar el pago.",
+                "PIN dinámico enviado"));
     }
 
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)

@@ -73,6 +73,9 @@ public class PagoServicioServiceImpl implements PagoServicioService {
     @Autowired(required = false)
     private ProductoMongoRepository productoMongoRepository;
 
+    @Autowired(required = false)
+    private com.proyecto.servicios.security.TwoFactorAuthService twoFactorAuthService;
+
     @Value("${gestopago.aes.secret-key:${JWT_SECRET:ClaveSeguraParaCifradoAES256GestoPago!}}")
     private String claveSecretaAes;
 
@@ -420,9 +423,59 @@ public class PagoServicioServiceImpl implements PagoServicioService {
         }
     }
 
+    public void setTwoFactorAuthService(com.proyecto.servicios.security.TwoFactorAuthService twoFactorAuthService) {
+        this.twoFactorAuthService = twoFactorAuthService;
+    }
+
+    @Override
+    public void solicitarPinTransaccional(String numCuenta, BigDecimal monto, String servicio) {
+        DeclarativeAssertUtil.asegurar(
+                numCuenta != null && !numCuenta.isBlank(),
+                () -> new ReglaNegocioException("El número de cuenta es requerido para solicitar el PIN de autorización"));
+        DeclarativeAssertUtil.asegurar(
+                monto != null && monto.compareTo(BigDecimal.ZERO) > 0,
+                () -> new ReglaNegocioException("El monto a pagar debe ser mayor a 0"));
+
+        CuentaEntity cuenta = cuentaRepository.findByNumeroCuenta(numCuenta.trim())
+                .orElseThrow(() -> new EntidadNoProcesableException("No se encontró la cuenta bancaria " + numCuenta));
+
+        DeclarativeAssertUtil.asegurar(
+                "ACTIVA".equalsIgnoreCase(cuenta.getEstatus()),
+                () -> new ReglaNegocioException("La cuenta bancaria no se encuentra ACTIVA"));
+
+        DeclarativeAssertUtil.asegurar(
+                cuenta.getSaldo().compareTo(monto) >= 0,
+                () -> new ReglaNegocioException(
+                        String.format(Locale.ROOT, "Saldo insuficiente para pagar este servicio. Saldo disponible: $%.2f, Monto: $%.2f",
+                                cuenta.getSaldo(), monto)));
+
+        String correoDestino = null;
+        if (cuenta.getCliente() != null && cuenta.getCliente().getCorreoElectronico() != null
+                && !cuenta.getCliente().getCorreoElectronico().isBlank()) {
+            correoDestino = cuenta.getCliente().getCorreoElectronico();
+        } else {
+            try {
+                var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+                if (auth != null && auth.getName() != null && !auth.getName().isBlank()) {
+                    correoDestino = auth.getName();
+                }
+            } catch (Exception ignored) {}
+        }
+
+        DeclarativeAssertUtil.asegurar(
+                correoDestino != null && !correoDestino.isBlank(),
+                () -> new ReglaNegocioException("La cuenta no tiene un correo electrónico asociado para enviar el PIN de autorización"));
+
+        if (twoFactorAuthService == null) {
+            throw new ReglaNegocioException("El servicio de autenticación multifactor no se encuentra disponible");
+        }
+
+        twoFactorAuthService.generarPinTransaccional(correoDestino, numCuenta.trim(), monto, servicio);
+    }
+
     private void validarPinSeguro(CuentaEntity cuenta, String pinIngresado) {
         if (pinIngresado == null || !pinIngresado.trim().matches("^\\d{4,8}$")) {
-            throw new ReglaNegocioException("El PIN o pass seguro de verificación debe contener entre 4 y 8 dígitos numéricos");
+            throw new ReglaNegocioException("El PIN de verificación debe contener entre 4 y 8 dígitos numéricos");
         }
 
         String numCuenta = cuenta.getNumeroCuenta();
@@ -431,16 +484,30 @@ public class PagoServicioServiceImpl implements PagoServicioService {
                 intentos < MAX_INTENTOS_PIN,
                 () -> new ReglaNegocioException("La cuenta ha sido bloqueada temporalmente para autorizar pagos debido a múltiples intentos fallidos de PIN"));
 
-        DeclarativeAssertUtil.asegurar(
-                cuenta.getPinHash() != null && !cuenta.getPinHash().isBlank(),
-                () -> new ReglaNegocioException("La cuenta no tiene un PIN de autorización configurado. No es posible autorizar transacciones."));
-
-        boolean pinValido = passwordEncoder.matches(pinIngresado.trim(), cuenta.getPinHash());
-        if (!pinValido) {
-            intentosFallidosPinPorCuenta.put(numCuenta, intentos + 1);
-            throw new ReglaNegocioException("El PIN de autorización ingresado es incorrecto");
+        // 1. Prioridad: Verificar si existe un PIN dinámico generado para esta transacción
+        if (twoFactorAuthService != null && twoFactorAuthService.tienePinTransaccionalActivo(numCuenta)) {
+            boolean pinDinamicoValido = twoFactorAuthService.validarPinTransaccional(numCuenta, pinIngresado);
+            if (!pinDinamicoValido) {
+                intentosFallidosPinPorCuenta.put(numCuenta, intentos + 1);
+                throw new ReglaNegocioException("El PIN dinámico de autorización es incorrecto o ha expirado. Verifique el código enviado a su correo.");
+            }
+            // Éxito con PIN dinámico de un solo uso
+            intentosFallidosPinPorCuenta.remove(numCuenta);
+            return;
         }
-        intentosFallidosPinPorCuenta.remove(numCuenta);
+
+        // 2. Fallback: Si no se solicitó PIN dinámico (pruebas o bypass), validar PIN estático configurado
+        if (cuenta.getPinHash() != null && !cuenta.getPinHash().isBlank()) {
+            boolean pinValido = passwordEncoder.matches(pinIngresado.trim(), cuenta.getPinHash());
+            if (!pinValido) {
+                intentosFallidosPinPorCuenta.put(numCuenta, intentos + 1);
+                throw new ReglaNegocioException("El PIN de autorización ingresado es incorrecto");
+            }
+            intentosFallidosPinPorCuenta.remove(numCuenta);
+            return;
+        }
+
+        throw new ReglaNegocioException("No se encontró un PIN dinámico activo ni un PIN configurado para autorizar la transacción. Solicite un nuevo código a su correo.");
     }
 
     private String obtenerTokenProveedor(Integer distribuidor) {

@@ -4,12 +4,22 @@ import com.proyecto.servicios.model.pago.PagoConciliacionRequestDto;
 import com.proyecto.servicios.model.pago.PagoServicioRequestDto;
 import com.proyecto.servicios.model.pago.PagoServicioResponseDto;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
  * Servicio desacoplado para la recepción, validación, procesamiento y conciliación de pagos de servicios y recargas telefónicas.
  */
 public interface PagoServicioService {
+
+    /**
+     * Genera un PIN dinámico de un solo uso (OTP) y lo envía al correo del titular de la cuenta para autorizar la transacción.
+     *
+     * @param numCuenta Número de cuenta origen
+     * @param monto     Importe de la transacción
+     * @param servicio  Nombre del servicio a pagar
+     */
+    void solicitarPinTransaccional(String numCuenta, BigDecimal monto, String servicio);
 
     /**
      * Procesa la solicitud de pago de servicio o recarga telefónica validando reglas de negocio, saldo, catálogo y autenticación.
