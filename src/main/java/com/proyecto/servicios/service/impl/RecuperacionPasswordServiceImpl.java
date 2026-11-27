@@ -12,6 +12,7 @@ import com.proyecto.servicios.repositorys.cliente.RecuperacionPasswordRepository
 import com.proyecto.servicios.repositorys.cliente.UsuarioAccesoRepository;
 import com.proyecto.servicios.security.UserSessionService;
 import com.proyecto.servicios.service.RecuperacionPasswordService;
+import com.proyecto.servicios.util.HttpMailWebhookClient;
 import jakarta.mail.internet.MimeMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,6 +49,9 @@ public class RecuperacionPasswordServiceImpl implements RecuperacionPasswordServ
 
     @Autowired(required = false)
     private JavaMailSender mailSender;
+
+    @Autowired(required = false)
+    private HttpMailWebhookClient httpMailWebhookClient;
 
     @Value("${spring.mail.username:}")
     private String mailFrom;
@@ -235,6 +239,23 @@ public class RecuperacionPasswordServiceImpl implements RecuperacionPasswordServ
     }
 
     private void enviarCorreoRecuperacion(String destinatario, String codigo) {
+        String asunto = "Recuperación de Contraseña - Banca Digital GestoPago";
+        String textoPlano = "Estimado usuario,\n\n"
+                + "Se recibió una solicitud para restablecer la contraseña de su cuenta en Banca Digital GestoPago.\n\n"
+                + "Su código temporal de verificación es:\n\n"
+                + "   " + codigo + "\n\n"
+                + "Este código es válido durante " + EXPIRACION_CODIGO_MINUTOS + " minutos y puede utilizarse una sola vez.\n"
+                + "Si usted no solicitó recuperar su contraseña, ignore este mensaje; su cuenta permanece segura.\n\n"
+                + "Atentamente,\n"
+                + "Equipo de Seguridad - Banca Digital GestoPago";
+        String htmlBody = construirHtmlRecuperacion(codigo);
+
+        if (httpMailWebhookClient != null && httpMailWebhookClient.estaConfigurado()) {
+            if (httpMailWebhookClient.enviarCorreo(destinatario, asunto, textoPlano, htmlBody)) {
+                return;
+            }
+        }
+
         if (mailSender == null) {
             log.warn("Canal SMTP no configurado (spring.mail.* ausente): no se pudo despachar correo de recuperación a '{}'", destinatario);
             return;
@@ -248,18 +269,7 @@ public class RecuperacionPasswordServiceImpl implements RecuperacionPasswordServ
             mimeMessage.setHeader("X-Priority", "1");
             mimeMessage.setHeader("Importance", "High");
             helper.setTo(destinatario.trim());
-            helper.setSubject("Recuperación de Contraseña - Banca Digital GestoPago");
-
-            String textoPlano = "Estimado usuario,\n\n"
-                    + "Se recibió una solicitud para restablecer la contraseña de su cuenta en Banca Digital GestoPago.\n\n"
-                    + "Su código temporal de verificación es:\n\n"
-                    + "   " + codigo + "\n\n"
-                    + "Este código es válido durante " + EXPIRACION_CODIGO_MINUTOS + " minutos y puede utilizarse una sola vez.\n"
-                    + "Si usted no solicitó recuperar su contraseña, ignore este mensaje; su cuenta permanece segura.\n\n"
-                    + "Atentamente,\n"
-                    + "Equipo de Seguridad - Banca Digital GestoPago";
-
-            String htmlBody = construirHtmlRecuperacion(codigo);
+            helper.setSubject(asunto);
             helper.setText(textoPlano, htmlBody);
 
             mailSender.send(mimeMessage);

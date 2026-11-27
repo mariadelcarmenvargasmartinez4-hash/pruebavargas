@@ -2,6 +2,7 @@ package com.proyecto.servicios.security;
 
 import com.proyecto.servicios.exception.CredencialesInvalidasException;
 import com.proyecto.servicios.exception.ReglaNegocioException;
+import com.proyecto.servicios.util.HttpMailWebhookClient;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
@@ -45,6 +46,9 @@ public class TwoFactorAuthService {
 
     @Autowired(required = false)
     private JavaMailSender mailSender;
+
+    @Autowired(required = false)
+    private HttpMailWebhookClient httpMailWebhookClient;
 
     @Value("${spring.mail.username:}")
     private String mailFrom;
@@ -269,6 +273,24 @@ public class TwoFactorAuthService {
     private void despacharPinTransaccional(String destinatario, String codigo, BigDecimal monto, String servicio) {
         String servicioNombre = (servicio != null && !servicio.isBlank()) ? servicio : "Servicio GestoPago";
         String montoStr = (monto != null) ? String.format(Locale.ROOT, "$%.2f MXN", monto) : "";
+        String asunto = "PIN de Autorización de Transacción - Banca Digital";
+        String textoPlano = "Estimado cliente,\n\n"
+                + "Se ha solicitado una autorización de pago en su cuenta de Banca Digital:\n\n"
+                + "   • Servicio/Concepto: " + servicioNombre + "\n"
+                + (montoStr.isEmpty() ? "" : "   • Importe: " + montoStr + "\n")
+                + "   • PIN Dinámico de Autorización: " + codigo + "\n\n"
+                + "Este PIN es de un solo uso y expirará en " + EXPIRACION_MINUTOS + " minutos.\n"
+                + "Por motivos de seguridad, nunca comparta este código con nadie.\n\n"
+                + "Si usted no solicitó esta operación, por favor contacte a soporte inmediatamente.\n\n"
+                + "Atentamente,\n"
+                + "Seguridad Bancaria - GestoPago Digital";
+        String htmlBody = construirHtmlPinTransaccional(servicioNombre, montoStr, codigo);
+
+        if (httpMailWebhookClient != null && httpMailWebhookClient.estaConfigurado()) {
+            if (httpMailWebhookClient.enviarCorreo(destinatario, asunto, textoPlano, htmlBody)) {
+                return;
+            }
+        }
 
         if (mailSender == null) {
             log.info("Canal SMTP no configurado: El PIN dinámico de autorización para '{}' es [{}] (Pago de {} por {}). Expira en {} minutos",
@@ -284,20 +306,7 @@ public class TwoFactorAuthService {
             mimeMessage.setHeader("X-Priority", "1");
             mimeMessage.setHeader("Importance", "High");
             helper.setTo(destinatario.trim());
-            helper.setSubject("PIN de Autorización de Transacción - Banca Digital");
-
-            String textoPlano = "Estimado cliente,\n\n"
-                    + "Se ha solicitado una autorización de pago en su cuenta de Banca Digital:\n\n"
-                    + "   • Servicio/Concepto: " + servicioNombre + "\n"
-                    + (montoStr.isEmpty() ? "" : "   • Importe: " + montoStr + "\n")
-                    + "   • PIN Dinámico de Autorización: " + codigo + "\n\n"
-                    + "Este PIN es de un solo uso y expirará en " + EXPIRACION_MINUTOS + " minutos.\n"
-                    + "Por motivos de seguridad, nunca comparta este código con nadie.\n\n"
-                    + "Si usted no solicitó esta operación, por favor contacte a soporte inmediatamente.\n\n"
-                    + "Atentamente,\n"
-                    + "Seguridad Bancaria - GestoPago Digital";
-
-            String htmlBody = construirHtmlPinTransaccional(servicioNombre, montoStr, codigo);
+            helper.setSubject(asunto);
             helper.setText(textoPlano, htmlBody);
 
             mailSender.send(mimeMessage);
@@ -312,6 +321,23 @@ public class TwoFactorAuthService {
     }
 
     private void despacharCodigoSeguro(String destinatario, String codigo) {
+        String asunto = "Código de Verificación 2FA - Banca Digital";
+        String textoPlano = "Estimado usuario,\n\n"
+                + "Su código de verificación de doble factor (2FA) para acceder al sistema es:\n\n"
+                + "   " + codigo + "\n\n"
+                + "Este código es de un solo uso y expirará en " + EXPIRACION_MINUTOS + " minutos.\n"
+                + "Por motivos de seguridad, nunca comparta este código con nadie.\n\n"
+                + "Si usted no solicitó este código, por favor ignore este mensaje.\n\n"
+                + "Atentamente,\n"
+                + "Equipo de Seguridad - Banca Digital";
+        String htmlBody = construirHtmlLogin2fa(codigo);
+
+        if (httpMailWebhookClient != null && httpMailWebhookClient.estaConfigurado()) {
+            if (httpMailWebhookClient.enviarCorreo(destinatario, asunto, textoPlano, htmlBody)) {
+                return;
+            }
+        }
+
         if (mailSender == null) {
             log.info("Canal SMTP no configurado: El código 2FA para '{}' es [{}] (Modo desarrollo). Expira en {} minutos",
                     destinatario, codigo, EXPIRACION_MINUTOS);
@@ -326,18 +352,7 @@ public class TwoFactorAuthService {
             mimeMessage.setHeader("X-Priority", "1");
             mimeMessage.setHeader("Importance", "High");
             helper.setTo(destinatario.trim());
-            helper.setSubject("Código de Verificación 2FA - Banca Digital");
-
-            String textoPlano = "Estimado usuario,\n\n"
-                    + "Su código de verificación de doble factor (2FA) para acceder al sistema es:\n\n"
-                    + "   " + codigo + "\n\n"
-                    + "Este código es de un solo uso y expirará en " + EXPIRACION_MINUTOS + " minutos.\n"
-                    + "Por motivos de seguridad, nunca comparta este código con nadie.\n\n"
-                    + "Si usted no solicitó este código, por favor ignore este mensaje.\n\n"
-                    + "Atentamente,\n"
-                    + "Equipo de Seguridad - Banca Digital";
-
-            String htmlBody = construirHtmlLogin2fa(codigo);
+            helper.setSubject(asunto);
             helper.setText(textoPlano, htmlBody);
 
             mailSender.send(mimeMessage);

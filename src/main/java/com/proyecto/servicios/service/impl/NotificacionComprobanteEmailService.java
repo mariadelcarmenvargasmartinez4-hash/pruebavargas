@@ -1,6 +1,7 @@
 package com.proyecto.servicios.service.impl;
 
 import com.proyecto.servicios.model.pago.PagoServicioResponseDto;
+import com.proyecto.servicios.util.HttpMailWebhookClient;
 import jakarta.mail.internet.MimeMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,6 +32,9 @@ public class NotificacionComprobanteEmailService {
 
     @Autowired(required = false)
     private JavaMailSender mailSender;
+
+    @Autowired(required = false)
+    private HttpMailWebhookClient httpMailWebhookClient;
 
     @Value("${spring.mail.username:}")
     private String mailFrom;
@@ -74,6 +78,17 @@ public class NotificacionComprobanteEmailService {
                                  String nombreUsuario,
                                  PagoServicioResponseDto comprobante,
                                  boolean esCompra) {
+        String textoPlano = construirTextoPlano(nombreUsuario, comprobante, esCompra);
+        String htmlBody = construirHtmlComprobante(nombreUsuario, comprobante, esCompra);
+
+        if (httpMailWebhookClient != null && httpMailWebhookClient.estaConfigurado()) {
+            if (httpMailWebhookClient.enviarCorreo(destinatario, ASUNTO_COMPROBANTE, textoPlano, htmlBody)) {
+                log.info("Comprobante de operación ({}) enviado exitosamente por canal HTTPS a '{}' [UPE: {}]",
+                        comprobante.getEstatus(), destinatario, comprobante.getUpe());
+                return;
+            }
+        }
+
         if (mailSender == null) {
             log.warn("Canal SMTP no configurado (spring.mail.* ausente): no fue posible enviar el comprobante de la operación UPE '{}' a '{}'",
                     comprobante.getUpe(), destinatario);
@@ -88,9 +103,6 @@ public class NotificacionComprobanteEmailService {
             helper.setFrom(remitente, "Banca Digital GestoPago");
             helper.setTo(destinatario);
             helper.setSubject(ASUNTO_COMPROBANTE);
-
-            String textoPlano = construirTextoPlano(nombreUsuario, comprobante, esCompra);
-            String htmlBody = construirHtmlComprobante(nombreUsuario, comprobante, esCompra);
             helper.setText(textoPlano, htmlBody);
 
             mailSender.send(mimeMessage);
