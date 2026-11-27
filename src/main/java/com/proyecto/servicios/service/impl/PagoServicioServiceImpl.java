@@ -8,6 +8,7 @@ import com.proyecto.servicios.entity.mongo.ProductoDocument;
 import com.proyecto.servicios.entity.pago.PagoServicioEntity;
 import com.proyecto.servicios.exception.CuentaNoEncontradaException;
 import com.proyecto.servicios.exception.EntidadNoProcesableException;
+import com.proyecto.servicios.exception.PagoRechazadoProveedorException;
 import com.proyecto.servicios.exception.ProveedorPagoException;
 import com.proyecto.servicios.exception.ReglaNegocioException;
 import com.proyecto.servicios.model.gestopago.GestoPagoAuthResponse;
@@ -17,11 +18,13 @@ import com.proyecto.servicios.model.pago.PagoConciliacionRequestDto;
 import com.proyecto.servicios.model.pago.PagoServicioRequestDto;
 import com.proyecto.servicios.model.pago.PagoServicioRequestRecord;
 import com.proyecto.servicios.model.pago.PagoServicioResponseDto;
+import com.proyecto.servicios.model.producto.ProductoItemDto;
 import com.proyecto.servicios.repositorys.cliente.CuentaRepository;
 import com.proyecto.servicios.repositorys.mongo.ProductoMongoRepository;
 import com.proyecto.servicios.repositorys.pago.PagoServicioRepository;
 import com.proyecto.servicios.service.GestoPagoTokenService;
 import com.proyecto.servicios.service.PagoServicioService;
+import com.proyecto.servicios.service.ProductoService;
 import com.proyecto.servicios.util.AesEncryptionUtil;
 import com.proyecto.servicios.util.DeclarativeAssertUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -58,6 +61,10 @@ public class PagoServicioServiceImpl implements PagoServicioService {
 
     private static final int MAX_INTENTOS_PIN = 3;
     private static final String ESTATUS_APLICADO = "APLICADO";
+    private static final String ESTATUS_RECHAZADA = "RECHAZADA";
+    private static final String MONEDA_MXN = "MXN";
+    private static final String ATENCION_CLIENTES_GESTOPAGO = "800-437-8672";
+    private static final String NOMBRE_GATEWAY_GESTOPAGO = "GestoPago Gateway 2.0";
     private static final String TIPO_RECARGA = "RECARGA_TELEFONICA";
     private static final String TIPO_SERVICIO = "PAGO_SERVICIO_REFERENCIA";
     private final Map<String, Integer> intentosFallidosPinPorCuenta = new ConcurrentHashMap<>();
@@ -74,7 +81,13 @@ public class PagoServicioServiceImpl implements PagoServicioService {
     private ProductoMongoRepository productoMongoRepository;
 
     @Autowired(required = false)
+    private ProductoService productoService;
+
+    @Autowired(required = false)
     private com.proyecto.servicios.security.TwoFactorAuthService twoFactorAuthService;
+
+    @Autowired(required = false)
+    private NotificacionComprobanteEmailService notificacionComprobanteEmailService;
 
     @Value("${gestopago.aes.secret-key:${JWT_SECRET:ClaveSeguraParaCifradoAES256GestoPago!}}")
     private String claveSecretaAes;
@@ -108,7 +121,7 @@ public class PagoServicioServiceImpl implements PagoServicioService {
     }
 
     @Override
-    @Transactional(transactionManager = "sfTransactionManager", noRollbackFor = ProveedorPagoException.class)
+    @Transactional(transactionManager = "sfTransactionManager", noRollbackFor = {ProveedorPagoException.class, PagoRechazadoProveedorException.class})
     public PagoServicioResponseDto procesarPago(PagoServicioRequestDto request) {
         // Validación previa de objeto de petición
         DeclarativeAssertUtil.asegurar(request != null, () -> new ReglaNegocioException("La petición de pago no puede ser nula"));
@@ -154,10 +167,23 @@ public class PagoServicioServiceImpl implements PagoServicioService {
                         " se encuentra actualmente en estado " + previo.getEstatus() + " (Folio: " + previo.getFolioTransaccion() +
                         "). No se puede procesar una nueva solicitud hasta que sea consultada o conciliada.");
             }
+            if (previo.getEstatus() != null && previo.getEstatus().toUpperCase(Locale.ROOT).startsWith("RECHAZAD")) {
+                log.info("Petición repetida detectada para UPE {} previamente rechazada. Retornando comprobante sin reenviar notificación.", requestRecord.upe());
+                throw new PagoRechazadoProveedorException(
+                        "Transacción previamente rechazada por el proveedor",
+                        mapearTransaccionAResponse(previo));
+            }
         }
 
         // 3. Validación de Catálogo de Productos y Restricciones de Monto
-        validarProductoEnCatalogo(requestRecord.idServicio(), requestRecord.idProducto(), requestRecord.monto());
+        Optional<ProductoDocument> productoCatalogoOpt = obtenerProductoValidadoEnCatalogo(
+                requestRecord.idServicio(), requestRecord.idProducto(), requestRecord.monto());
+        String nombreProductoReal = productoCatalogoOpt.map(ProductoDocument::getProducto)
+                .filter(Predicate.not(String::isBlank))
+                .orElse(null);
+        String nombreServicioReal = productoCatalogoOpt.map(ProductoDocument::getServicio)
+                .filter(Predicate.not(String::isBlank))
+                .orElse(null);
 
         // 4. Validación de la Cuenta con Bloqueo Pesimista (previene sobregiros por transacciones concurrentes)
         CuentaEntity cuenta = cuentaRepository.findByNumeroCuentaWithLock(requestRecord.numCuenta())
@@ -211,6 +237,7 @@ public class PagoServicioServiceImpl implements PagoServicioService {
 
         // Registro de auditoría inicial (Garantiza persistencia local aun ante fallas externas)
         String folioInicial = UUID.randomUUID().toString();
+        LocalDateTime instanteEnvio = LocalDateTime.now();
         PagoServicioEntity transaccion = PagoServicioEntity.builder()
                 .folioTransaccion(folioInicial)
                 .numCuenta(requestRecord.numCuenta())
@@ -223,10 +250,20 @@ public class PagoServicioServiceImpl implements PagoServicioService {
                 .esRecargaTelefonica(requestRecord.bandera())
                 .telefono(requestRecord.telefono())
                 .referencia(requestRecord.referencia())
+                .nombreProducto(nombreProductoReal)
+                .nombreServicio(nombreServicioReal)
+                .moneda(MONEDA_MXN)
+                .notificacionEnviada(false)
                 .estatus("PROCESANDO")
-                .fechaOperacion(LocalDateTime.now())
+                .fechaOperacion(instanteEnvio)
                 .build();
         pagoServicioRepository.save(transaccion);
+
+        String tipoOperacion = Boolean.TRUE.equals(requestRecord.bandera()) ? TIPO_RECARGA : TIPO_SERVICIO;
+        String destinoPago = Boolean.TRUE.equals(requestRecord.bandera()) ? requestRecord.telefono() : requestRecord.referencia();
+        String correoCliente = resolverCorreoCliente(cuenta);
+        String nombreCliente = resolverNombreCliente(cuenta);
+        boolean esCompra = NotificacionComprobanteEmailService.detectarSiEsCompra(nombreProductoReal, nombreServicioReal);
 
         // =========================================================================
         // PASO 4: LLAMADA A SENDTX, EVALUACIÓN DE RESPUESTA, DESCUENTO Y CONCILIACIÓN
@@ -237,8 +274,21 @@ public class PagoServicioServiceImpl implements PagoServicioService {
             respuestaProveedor = ejecutarEnvioSendTx(sendTxRequest, token);
         } catch (ProveedorPagoException ex) {
             // Riesgo financiero crítico: un timeout no implica necesariamente que el proveedor no procesó la transacción.
+            boolean enviaraNotificacion = correoCliente != null && !correoCliente.isBlank() && notificacionComprobanteEmailService != null;
             transaccion.setEstatus("EN_CONCILIACION");
+            transaccion.setConfirmadoSinCargo(false);
+            transaccion.setNotificacionEnviada(enviaraNotificacion);
             pagoServicioRepository.save(transaccion);
+            if (twoFactorAuthService != null) {
+                twoFactorAuthService.consumirPinTransaccional(requestRecord.numCuenta());
+            }
+            if (enviaraNotificacion) {
+                PagoServicioResponseDto dtoConciliacion = construirComprobanteDto(
+                        transaccion, distribuidorEfectivo, cuenta.getSaldo(), cuenta.getSaldo(),
+                        tipoOperacion, destinoPago,
+                        "La comunicación con el proveedor entró en tiempo de espera. Operación en conciliación.");
+                notificacionComprobanteEmailService.notificarOperacionAsync(correoCliente, nombreCliente, dtoConciliacion, esCompra);
+            }
             log.warn("Transacción con UPE {} marcada EN_CONCILIACION ante timeout o fallo de red con GestoPago. Folio: {}",
                     requestRecord.upe(), folioInicial);
             throw new ProveedorPagoException(
@@ -262,14 +312,49 @@ public class PagoServicioServiceImpl implements PagoServicioService {
 
         // Si la respuesta es distinta de "01" o rechazo: NO se descuenta saldo
         if (respuestaProveedor == null || !respuestaProveedor.esExitosa()) {
-            transaccion.setEstatus("RECHAZADO");
+            String numAutorizacionRechazo = extraerTextoLimpio(respuestaProveedor != null ? respuestaProveedor.getAutorizacion() : null);
+            String idTxRechazo = extraerTextoLimpio(respuestaProveedor != null ? respuestaProveedor.getIdTxProveedor() : null);
+            String folioRechazo = Optional.ofNullable(respuestaProveedor)
+                    .map(GestoPagoSendTxResponse::getFolioTransaccion)
+                    .filter(Predicate.not(String::isBlank))
+                    .orElse(folioInicial);
+            boolean confirmadoSinCargo = respuestaProveedor != null
+                    && respuestaProveedor.getCodigo() != null
+                    && !respuestaProveedor.getCodigo().isBlank();
+            boolean enviaraNotificacion = !Boolean.TRUE.equals(transaccion.getNotificacionEnviada())
+                    && correoCliente != null && !correoCliente.isBlank()
+                    && notificacionComprobanteEmailService != null;
+
+            transaccion.setFolioTransaccion(folioRechazo);
+            transaccion.setEstatus(ESTATUS_RECHAZADA);
+            transaccion.setNumAutorizacion(numAutorizacionRechazo);
+            transaccion.setIdTxProveedor(idTxRechazo);
+            transaccion.setConfirmadoSinCargo(confirmadoSinCargo);
+            transaccion.setNotificacionEnviada(enviaraNotificacion);
             pagoServicioRepository.save(transaccion);
+
+            if (twoFactorAuthService != null) {
+                twoFactorAuthService.consumirPinTransaccional(requestRecord.numCuenta());
+            }
+
             String mensajeError = Optional.ofNullable(respuestaProveedor)
                     .map(GestoPagoSendTxResponse::getMensaje)
+                    .filter(Predicate.not(String::isBlank))
                     .orElse("El proveedor no aprobó la transacción");
+            String mensajeCompletoRechazo = "Transacción no exitosa ante el proveedor: " + mensajeError;
+
+            PagoServicioResponseDto comprobanteRechazo = construirComprobanteDto(
+                    transaccion, distribuidorEfectivo, cuenta.getSaldo(), cuenta.getSaldo(),
+                    tipoOperacion, destinoPago, mensajeCompletoRechazo);
+
+            if (enviaraNotificacion) {
+                notificacionComprobanteEmailService.notificarOperacionAsync(
+                        correoCliente, nombreCliente, comprobanteRechazo, esCompra);
+            }
+
             log.warn("Transacción rechazada por proveedor externo. Código: {}. No se descontó saldo",
                     Optional.ofNullable(respuestaProveedor).map(GestoPagoSendTxResponse::getCodigo).orElse("ERR"));
-            throw new ReglaNegocioException("Transacción no exitosa ante el proveedor: " + mensajeError);
+            throw new PagoRechazadoProveedorException(mensajeCompletoRechazo, comprobanteRechazo);
         }
 
         // Si retorna código 01 (Transacción Exitosa), en ese exacto instante se descuenta el saldo
@@ -281,9 +366,18 @@ public class PagoServicioServiceImpl implements PagoServicioService {
         String folioFinal = Optional.ofNullable(respuestaProveedor.getFolioTransaccion())
                 .filter(Predicate.not(String::isBlank))
                 .orElse(folioInicial);
+        String numAutorizacionReal = extraerTextoLimpio(respuestaProveedor.getAutorizacion());
+        String idTxProveedorReal = extraerTextoLimpio(respuestaProveedor.getIdTxProveedor());
+        boolean enviaraNotificacion = !Boolean.TRUE.equals(transaccion.getNotificacionEnviada())
+                && correoCliente != null && !correoCliente.isBlank()
+                && notificacionComprobanteEmailService != null;
 
         transaccion.setFolioTransaccion(folioFinal);
         transaccion.setEstatus(ESTATUS_APLICADO);
+        transaccion.setNumAutorizacion(numAutorizacionReal);
+        transaccion.setIdTxProveedor(idTxProveedorReal);
+        transaccion.setConfirmadoSinCargo(false);
+        transaccion.setNotificacionEnviada(enviaraNotificacion);
         pagoServicioRepository.save(transaccion);
 
         if (twoFactorAuthService != null) {
@@ -293,26 +387,16 @@ public class PagoServicioServiceImpl implements PagoServicioService {
         log.info("Pago confirmado con código 01. Saldo debitado exitosamente. Cuenta: {}, Folio: {}, Nuevo Saldo: {}",
                 requestRecord.numCuenta(), folioFinal, saldoActual);
 
-        String tipoOperacion = Boolean.TRUE.equals(requestRecord.bandera()) ? TIPO_RECARGA : TIPO_SERVICIO;
-        String destinoPago = Boolean.TRUE.equals(requestRecord.bandera()) ? requestRecord.telefono() : requestRecord.referencia();
+        PagoServicioResponseDto respuestaExitosa = construirComprobanteDto(
+                transaccion, distribuidorEfectivo, saldoAnterior, saldoActual,
+                tipoOperacion, destinoPago, "Pago aplicado exitosamente con código 01 del proveedor");
 
-        return PagoServicioResponseDto.builder()
-                .folioTransaccion(folioFinal)
-                .numCuenta(requestRecord.numCuenta())
-                .idServicio(requestRecord.idServicio())
-                .idProducto(requestRecord.idProducto())
-                .idConcepto(requestRecord.idConcepto())
-                .idDistribuidor(distribuidorEfectivo)
-                .monto(requestRecord.monto())
-                .saldoAnterior(saldoAnterior)
-                .saldoActual(saldoActual)
-                .upe(requestRecord.upe())
-                .tipoOperacion(tipoOperacion)
-                .destinoPago(destinoPago)
-                .estatus(ESTATUS_APLICADO)
-                .mensaje("Pago aplicado exitosamente con código 01 del proveedor")
-                .fechaOperacion(transaccion.getFechaOperacion())
-                .build();
+        if (enviaraNotificacion) {
+            notificacionComprobanteEmailService.notificarOperacionAsync(
+                    correoCliente, nombreCliente, respuestaExitosa, esCompra);
+        }
+
+        return respuestaExitosa;
     }
 
     @Override
@@ -338,7 +422,30 @@ public class PagoServicioServiceImpl implements PagoServicioService {
         String tipoOperacion = Boolean.TRUE.equals(transaccion.getEsRecargaTelefonica()) ? TIPO_RECARGA : TIPO_SERVICIO;
         String destinoPago = Boolean.TRUE.equals(transaccion.getEsRecargaTelefonica()) ? transaccion.getTelefono() : transaccion.getReferencia();
 
+        String nombreProd = transaccion.getNombreProducto();
+        String nombreServ = transaccion.getNombreServicio();
+        if ((nombreProd == null || nombreProd.isBlank()) && transaccion.getIdProducto() != null) {
+            if (productoService != null) {
+                Optional<ProductoItemDto> itemOpt = productoService.buscarProductoRealPorId(transaccion.getIdProducto().intValue());
+                if (itemOpt.isPresent()) {
+                    nombreProd = itemOpt.get().getProducto();
+                    nombreServ = itemOpt.get().getServicio();
+                }
+            }
+            if ((nombreProd == null || nombreProd.isBlank()) && productoMongoRepository != null && productoService == null) {
+                try {
+                    Optional<ProductoDocument> docOpt = productoMongoRepository.findByIdProducto(transaccion.getIdProducto().intValue());
+                    if (docOpt.isPresent()) {
+                        nombreProd = docOpt.get().getProducto();
+                        nombreServ = docOpt.get().getServicio();
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+        }
+
         return PagoServicioResponseDto.builder()
+                .id(transaccion.getId())
                 .folioTransaccion(transaccion.getFolioTransaccion())
                 .numCuenta(transaccion.getNumCuenta())
                 .idServicio(transaccion.getIdServicio())
@@ -351,6 +458,14 @@ public class PagoServicioServiceImpl implements PagoServicioService {
                 .destinoPago(destinoPago)
                 .estatus(transaccion.getEstatus())
                 .mensaje("Transacción registrada: " + transaccion.getEstatus())
+                .moneda(Optional.ofNullable(transaccion.getMoneda()).filter(Predicate.not(String::isBlank)).orElse(MONEDA_MXN))
+                .nombreProducto(nombreProd)
+                .nombreServicio(nombreServ)
+                .numAutorizacion(transaccion.getNumAutorizacion())
+                .idTxProveedor(transaccion.getIdTxProveedor())
+                .atencionClientes(ATENCION_CLIENTES_GESTOPAGO)
+                .nombreGateway(NOMBRE_GATEWAY_GESTOPAGO)
+                .confirmadoSinCargo(transaccion.getConfirmadoSinCargo())
                 .fechaOperacion(transaccion.getFechaOperacion())
                 .build();
     }
@@ -390,8 +505,42 @@ public class PagoServicioServiceImpl implements PagoServicioService {
     }
 
     private void validarProductoEnCatalogo(Long idServicio, Long idProducto, BigDecimal monto) {
+        obtenerProductoValidadoEnCatalogo(idServicio, idProducto, monto);
+    }
+
+    private Optional<ProductoDocument> obtenerProductoValidadoEnCatalogo(Long idServicio, Long idProducto, BigDecimal monto) {
+        DeclarativeAssertUtil.asegurar(
+                idServicio != null && idServicio > 0 && idProducto != null && idProducto > 0,
+                () -> new ReglaNegocioException("Debe seleccionar obligatoriamente un producto o servicio válido de GestoPago antes de realizar la operación"));
+
+        // 1. Si ProductoService está activo (entorno real), validar rápidamente contra el catálogo real de GestoPago sin bloquear por MongoDB
+        if (productoService != null) {
+            Optional<ProductoItemDto> itemRealOpt = productoService.buscarProductoRealPorId(idProducto.intValue());
+            if (itemRealOpt.isPresent()) {
+                ProductoItemDto item = itemRealOpt.get();
+                ProductoDocument docEquivalente = ProductoDocument.builder()
+                        .idProducto(item.getIdProducto())
+                        .idServicio(item.getIdServicio())
+                        .producto(item.getProducto())
+                        .servicio(item.getServicio())
+                        .precio(item.getPrecio())
+                        .build();
+                DeclarativeAssertUtil.asegurar(
+                        docEquivalente.getIdServicio() != null && docEquivalente.getIdServicio().longValue() == idServicio,
+                        () -> new ReglaNegocioException(String.format(
+                                "El producto con ID %d no corresponde al servicio solicitado %d (Servicio en catálogo: %d)",
+                                idProducto, idServicio, docEquivalente.getIdServicio())));
+                validarPrecioCatalogo(docEquivalente, monto, idProducto);
+                return Optional.of(docEquivalente);
+            }
+            var listaCatalogo = productoService.obtenerListaProductos();
+            if (listaCatalogo != null && listaCatalogo.getProductos() != null && !listaCatalogo.getProductos().isEmpty()) {
+                throw new ReglaNegocioException("Debe seleccionar un producto o servicio válido del catálogo de GestoPago. El producto con ID " + idProducto + " no existe.");
+            }
+        }
+
         if (productoMongoRepository == null) {
-            return;
+            return Optional.empty();
         }
 
         try {
@@ -405,13 +554,16 @@ public class PagoServicioServiceImpl implements PagoServicioService {
                                 idProducto, idServicio, producto.getIdServicio())));
 
                 validarPrecioCatalogo(producto, monto, idProducto);
+                return productoOpt;
             } else {
                 validarExistenciaEnCatalogo(idProducto);
+                return Optional.empty();
             }
         } catch (EntidadNoProcesableException | ReglaNegocioException ex) {
             throw ex;
         } catch (Exception ex) {
             log.warn("Advertencia: No fue posible validar producto contra MongoDB ({}), se continuará con validación relacional.", ex.getMessage());
+            return Optional.empty();
         }
     }
 
@@ -446,6 +598,10 @@ public class PagoServicioServiceImpl implements PagoServicioService {
 
     public void setTwoFactorAuthService(com.proyecto.servicios.security.TwoFactorAuthService twoFactorAuthService) {
         this.twoFactorAuthService = twoFactorAuthService;
+    }
+
+    public void setNotificacionComprobanteEmailService(NotificacionComprobanteEmailService notificacionComprobanteEmailService) {
+        this.notificacionComprobanteEmailService = notificacionComprobanteEmailService;
     }
 
     @Override
@@ -579,6 +735,7 @@ public class PagoServicioServiceImpl implements PagoServicioService {
         String destinoPago = Boolean.TRUE.equals(previo.getEsRecargaTelefonica()) ? previo.getTelefono() : previo.getReferencia();
 
         return PagoServicioResponseDto.builder()
+                .id(previo.getId())
                 .folioTransaccion(previo.getFolioTransaccion())
                 .numCuenta(previo.getNumCuenta())
                 .idServicio(previo.getIdServicio())
@@ -591,7 +748,91 @@ public class PagoServicioServiceImpl implements PagoServicioService {
                 .destinoPago(destinoPago)
                 .estatus(ESTATUS_APLICADO)
                 .mensaje("Pago aplicado previamente (Respuesta idempotente)")
+                .moneda(Optional.ofNullable(previo.getMoneda()).filter(Predicate.not(String::isBlank)).orElse(MONEDA_MXN))
+                .nombreProducto(previo.getNombreProducto())
+                .nombreServicio(previo.getNombreServicio())
+                .numAutorizacion(previo.getNumAutorizacion())
+                .idTxProveedor(previo.getIdTxProveedor())
+                .atencionClientes(ATENCION_CLIENTES_GESTOPAGO)
+                .nombreGateway(NOMBRE_GATEWAY_GESTOPAGO)
+                .confirmadoSinCargo(previo.getConfirmadoSinCargo())
                 .fechaOperacion(previo.getFechaOperacion())
                 .build();
+    }
+
+    private PagoServicioResponseDto construirComprobanteDto(PagoServicioEntity transaccion,
+                                                            Integer distribuidorEfectivo,
+                                                            BigDecimal saldoAnterior,
+                                                            BigDecimal saldoActual,
+                                                            String tipoOperacion,
+                                                            String destinoPago,
+                                                            String mensaje) {
+        return PagoServicioResponseDto.builder()
+                .id(transaccion.getId())
+                .folioTransaccion(transaccion.getFolioTransaccion())
+                .numCuenta(transaccion.getNumCuenta())
+                .idServicio(transaccion.getIdServicio())
+                .idProducto(transaccion.getIdProducto())
+                .idConcepto(transaccion.getIdConcepto())
+                .idDistribuidor(distribuidorEfectivo)
+                .monto(transaccion.getMonto())
+                .saldoAnterior(saldoAnterior)
+                .saldoActual(saldoActual)
+                .upe(transaccion.getUpe())
+                .tipoOperacion(tipoOperacion)
+                .destinoPago(destinoPago)
+                .estatus(transaccion.getEstatus())
+                .mensaje(mensaje)
+                .moneda(Optional.ofNullable(transaccion.getMoneda()).filter(Predicate.not(String::isBlank)).orElse(MONEDA_MXN))
+                .nombreProducto(transaccion.getNombreProducto())
+                .nombreServicio(transaccion.getNombreServicio())
+                .numAutorizacion(transaccion.getNumAutorizacion())
+                .idTxProveedor(transaccion.getIdTxProveedor())
+                .atencionClientes(ATENCION_CLIENTES_GESTOPAGO)
+                .nombreGateway(NOMBRE_GATEWAY_GESTOPAGO)
+                .confirmadoSinCargo(transaccion.getConfirmadoSinCargo())
+                .fechaOperacion(transaccion.getFechaOperacion())
+                .build();
+    }
+
+    private String resolverCorreoCliente(CuentaEntity cuenta) {
+        if (cuenta != null && cuenta.getCliente() != null
+                && cuenta.getCliente().getCorreoElectronico() != null
+                && !cuenta.getCliente().getCorreoElectronico().isBlank()) {
+            return cuenta.getCliente().getCorreoElectronico().trim();
+        }
+        try {
+            var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.getName() != null && auth.getName().contains("@")) {
+                return auth.getName().trim();
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    private String resolverNombreCliente(CuentaEntity cuenta) {
+        if (cuenta == null || cuenta.getCliente() == null) {
+            return null;
+        }
+        var cl = cuenta.getCliente();
+        StringBuilder sb = new StringBuilder();
+        agregarParteNombre(sb, cl.getNombre());
+        agregarParteNombre(sb, cl.getSegundoNombre());
+        agregarParteNombre(sb, cl.getApellidoPaterno());
+        agregarParteNombre(sb, cl.getApellidoMaterno());
+        String completo = sb.toString().trim();
+        return completo.isEmpty() ? null : completo;
+    }
+
+    private void agregarParteNombre(StringBuilder sb, String parte) {
+        if (parte != null && !parte.isBlank()) {
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(parte.trim());
+        }
+    }
+
+    private String extraerTextoLimpio(String valor) {
+        return (valor != null && !valor.isBlank()) ? valor.trim() : null;
     }
 }

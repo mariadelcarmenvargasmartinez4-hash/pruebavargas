@@ -4,12 +4,205 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/api_constants.dart';
 import '../../core/network/api_client.dart';
-import '../../core/storage/secure_storage_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive_util.dart';
 import '../state/auth_provider.dart';
 import '../widgets/custom_button.dart';
-import '../widgets/custom_text_field.dart';
+
+/// Permite únicamente letras (incluyendo acentos/ñ/ü) y un solo espacio entre palabras.
+/// Elimina espacios iniciales y tabulaciones en tiempo real mientras el usuario escribe.
+class _SoloLetrasEspacioUnicoFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final raw = newValue.text;
+    final cursor = newValue.selection.end.clamp(0, raw.length);
+    final buffer = StringBuffer();
+    int nuevoCursor = 0;
+    final regLetra = RegExp(r'[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]');
+
+    for (int i = 0; i < raw.length; i++) {
+      final ch = raw[i];
+      if (regLetra.hasMatch(ch)) {
+        buffer.write(ch);
+        if (i < cursor) nuevoCursor++;
+      } else if (ch == ' ') {
+        final actual = buffer.toString();
+        if (actual.isNotEmpty && !actual.endsWith(' ')) {
+          buffer.write(' ');
+          if (i < cursor) nuevoCursor++;
+        }
+      }
+    }
+
+    final resultado = buffer.toString();
+    return TextEditingValue(
+      text: resultado,
+      selection: TextSelection.collapsed(
+        offset: nuevoCursor.clamp(0, resultado.length),
+      ),
+    );
+  }
+}
+
+/// Elimina tabulaciones, espacios iniciales y colapsa espacios múltiples consecutivos en uno solo.
+class _SinTabulacionEspacioUnicoFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final raw = newValue.text;
+    final cursor = newValue.selection.end.clamp(0, raw.length);
+    final buffer = StringBuffer();
+    int nuevoCursor = 0;
+
+    for (int i = 0; i < raw.length; i++) {
+      final ch = raw[i];
+      if (ch == '\t' || ch == '\r' || ch == '\n') {
+        continue;
+      }
+      if (ch == ' ') {
+        final actual = buffer.toString();
+        if (actual.isNotEmpty && !actual.endsWith(' ')) {
+          buffer.write(' ');
+          if (i < cursor) nuevoCursor++;
+        }
+      } else {
+        buffer.write(ch);
+        if (i < cursor) nuevoCursor++;
+      }
+    }
+
+    final resultado = buffer.toString();
+    return TextEditingValue(
+      text: resultado,
+      selection: TextSelection.collapsed(
+        offset: nuevoCursor.clamp(0, resultado.length),
+      ),
+    );
+  }
+}
+
+/// Impide cualquier espacio en blanco o tabulación.
+class _SinEspaciosNiTabsFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final raw = newValue.text;
+    final cursor = newValue.selection.end.clamp(0, raw.length);
+    final buffer = StringBuffer();
+    int nuevoCursor = 0;
+
+    for (int i = 0; i < raw.length; i++) {
+      final ch = raw[i];
+      if (!RegExp(r'\s').hasMatch(ch)) {
+        buffer.write(ch);
+        if (i < cursor) nuevoCursor++;
+      }
+    }
+
+    final resultado = buffer.toString();
+    return TextEditingValue(
+      text: resultado,
+      selection: TextSelection.collapsed(
+        offset: nuevoCursor.clamp(0, resultado.length),
+      ),
+    );
+  }
+}
+
+/// Formateador monetario en tiempo real: elimina tabulaciones y espacios,
+/// bloquea letras/símbolos y permite únicamente dígitos con un punto y hasta 2 decimales.
+class _MonedaInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final raw = newValue.text;
+    final cursor = newValue.selection.end.clamp(0, raw.length);
+    final buffer = StringBuffer();
+    int nuevoCursor = 0;
+    final regPermitido = RegExp(r'[0-9.]');
+
+    for (int i = 0; i < raw.length; i++) {
+      final ch = raw[i];
+      if (regPermitido.hasMatch(ch)) {
+        buffer.write(ch);
+        if (i < cursor) nuevoCursor++;
+      }
+    }
+
+    var limpio = buffer.toString();
+    if (limpio.isEmpty) {
+      return const TextEditingValue(
+        text: '',
+        selection: TextSelection.collapsed(offset: 0),
+      );
+    }
+
+    if (limpio == '.') {
+      return const TextEditingValue(
+        text: '0.',
+        selection: TextSelection.collapsed(offset: 2),
+      );
+    }
+
+    if (!RegExp(r'^\d+(\.\d{0,2})?$').hasMatch(limpio)) {
+      return oldValue;
+    }
+
+    return TextEditingValue(
+      text: limpio,
+      selection: TextSelection.collapsed(
+        offset: nuevoCursor.clamp(0, limpio.length),
+      ),
+    );
+  }
+}
+
+/// Impide superar la longitud máxima permitida y notifica para mostrar aviso al usuario.
+class _ControlLimiteFormatter extends TextInputFormatter {
+  final int maxLength;
+  final VoidCallback onLimiteExcedido;
+  final VoidCallback onDentroDeLimite;
+
+  _ControlLimiteFormatter({
+    required this.maxLength,
+    required this.onLimiteExcedido,
+    required this.onDentroDeLimite,
+  });
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    if (newValue.text.length > maxLength) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        onLimiteExcedido();
+      });
+      final truncado = newValue.text.substring(0, maxLength);
+      final offset = newValue.selection.end.clamp(0, maxLength);
+      return TextEditingValue(
+        text: truncado,
+        selection: TextSelection.collapsed(offset: offset),
+      );
+    }
+    if (newValue.text.length < oldValue.text.length &&
+        newValue.text.length < maxLength) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        onDentroDeLimite();
+      });
+    }
+    return newValue;
+  }
+}
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -69,18 +262,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
   // Errores específicos mapeados desde el backend (HTTP 400/409/422)
   Map<String, String> _serverErrors = {};
 
-  // Datos Personales
+  // Datos Personales (todos vacíos al abrir el formulario)
   final _nombreController = TextEditingController();
   final _apellidoPaternoController = TextEditingController();
   final _apellidoMaternoController = TextEditingController();
-  final _fechaNacimientoController = TextEditingController(text: '1995-05-15');
+  final _fechaNacimientoController = TextEditingController();
   final _curpController = TextEditingController();
   final _rfcController = TextEditingController();
 
-  String _sexo = 'MASCULINO';
+  String? _sexo;
   String _nacionalidad = 'MEXICANA';
-  String _estadoCivil = 'SOLTERO';
-  String _entidadNacimiento = 'DF';
+  String? _estadoCivil;
+  String? _entidadNacimiento;
 
   // Banderas de edición manual para respetar escrituras del usuario
   bool _curpEditadoManualmente = false;
@@ -132,15 +325,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
     {'codigo': 'UNL', 'descripcion': 'UNION LIBRE', 'nombre': 'Unión libre'},
   ];
 
+  // Avisos en tiempo real por intento de superar el límite de caracteres por campo
+  final Map<String, String> _avisosLimite = {};
+  final Map<String, FocusNode> _focusNodes = {};
+
+  // Catálogo dinámico de Colonias cargado exclusivamente desde el endpoint del backend
+  List<String> _coloniasDisponibles = [];
+  String? _coloniaSeleccionada;
+  bool _cargandoColonias = false;
+
   @override
   void initState() {
     super.initState();
+    _passwordController.clear();
     _cargarCatalogos();
   }
 
   Future<void> _cargarCatalogos() async {
+    final apiClient = context.read<ApiClient>();
     try {
-      final apiClient = ApiClient(storageService: SecureStorageService());
       final respEntidades = await apiClient.dio.get('${ApiConstants.catalogos}/entidades-federativas/todas');
       if (respEntidades.statusCode == 200 && respEntidades.data is List) {
         final List lista = respEntidades.data;
@@ -158,7 +361,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     } catch (_) {}
 
     try {
-      final apiClient = ApiClient(storageService: SecureStorageService());
       final respEstadosCiviles = await apiClient.dio.get('${ApiConstants.catalogos}/estados-civiles?size=50');
       if (respEstadosCiviles.statusCode == 200 && respEstadosCiviles.data != null && mounted) {
         final data = respEstadosCiviles.data;
@@ -191,6 +393,78 @@ class _RegisterScreenState extends State<RegisterScreen> {
     } catch (_) {}
   }
 
+  Future<void> _cargarColonias({String? cp, String? municipio}) async {
+    final cpLimpio = cp?.trim() ?? '';
+    final munLimpio = municipio?.trim() ?? '';
+
+    if (cpLimpio.length != 5 && munLimpio.isEmpty) {
+      if (mounted) {
+        setState(() {
+          _coloniasDisponibles = [];
+          _coloniaSeleccionada = null;
+          _coloniaController.clear();
+          _cargandoColonias = false;
+        });
+      }
+      return;
+    }
+
+    if (mounted) {
+      setState(() => _cargandoColonias = true);
+    }
+    try {
+      final apiClient = context.read<ApiClient>();
+      final queryParams = <String, dynamic>{};
+      if (cpLimpio.length == 5) queryParams['cp'] = cpLimpio;
+      if (munLimpio.isNotEmpty) queryParams['municipio'] = munLimpio;
+
+      final resp = await apiClient.dio.get(
+        '${ApiConstants.catalogos}/colonias',
+        queryParameters: queryParams,
+      );
+      if (!mounted) return;
+      if (cpLimpio.length == 5 && _cpController.text.trim() != cpLimpio) {
+        setState(() => _cargandoColonias = false);
+        return;
+      }
+      if (resp.statusCode == 200 && resp.data != null) {
+        final data = resp.data;
+        List items = [];
+        if (data is Map && data['datos'] is List) {
+          items = data['datos'] as List;
+        } else if (data is List) {
+          items = data;
+        }
+        final nuevasColonias = <String>[];
+        for (final item in items) {
+          final nombre = (item is Map
+                  ? (item['descripcion'] ?? item['nombre'] ?? '')
+                  : item.toString())
+              .toString()
+              .trim();
+          if (nombre.isNotEmpty && !nuevasColonias.contains(nombre)) {
+            nuevasColonias.add(nombre);
+          }
+        }
+        setState(() {
+          _coloniasDisponibles = nuevasColonias;
+          // No seleccionar automáticamente ninguna colonia; limpiar selección si ya no pertenece
+          if (_coloniaSeleccionada != null &&
+              !nuevasColonias.contains(_coloniaSeleccionada)) {
+            _coloniaSeleccionada = null;
+            _coloniaController.clear();
+          }
+        });
+      }
+    } catch (_) {
+      // Se mantiene dinámico sin opciones escritas manualmente en el frontend
+    } finally {
+      if (mounted) {
+        setState(() => _cargandoColonias = false);
+      }
+    }
+  }
+
   static String _formatearEstadoCivil(String raw) {
     final r = raw.trim().toUpperCase();
     if (r.contains('SOLTER')) return 'Soltero(a)';
@@ -212,21 +486,81 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _municipioController = TextEditingController();
   final _estadoController = TextEditingController();
   final _cpController = TextEditingController();
-  final _paisController = TextEditingController(text: 'Mexico');
+  final _paisController = TextEditingController();
 
-  // Laboral y Financiero
-  String _ocupacionSeleccionada = 'Analista Financiero';
+  // Laboral y Financiero (vacíos inicialmente)
+  String? _ocupacionSeleccionada;
   final _empresaController = TextEditingController();
   final _ingresoController = TextEditingController();
-  final _saldoInicialController = TextEditingController(text: '1500.00');
-  String _tipoCuenta = 'DEBITO';
+  final _saldoInicialController = TextEditingController();
+  String? _tipoCuenta;
 
-  // Seguridad
-  final _passwordController = TextEditingController(text: 'Segura123#');
+  // Seguridad (completamente en blanco al abrir el formulario)
+  final _passwordController = TextEditingController();
   bool _obscurePassword = true;
+
+  FocusNode _obtenerFocusNode(
+    String key,
+    TextEditingController controller, {
+    bool limpiarEspaciosExtremos = false,
+    bool actualizarCurpRfc = false,
+    bool bloquearTab = false,
+  }) {
+    return _focusNodes.putIfAbsent(key, () {
+      final node = FocusNode(
+        onKeyEvent: bloquearTab
+            ? (FocusNode n, KeyEvent event) {
+                if (event.logicalKey == LogicalKeyboardKey.tab) {
+                  return KeyEventResult.handled;
+                }
+                return KeyEventResult.ignored;
+              }
+            : null,
+      );
+      node.addListener(() {
+        if (!node.hasFocus && mounted) {
+          if (limpiarEspaciosExtremos) {
+            final limpio = controller.text.trim().replaceAll(RegExp(r' {2,}'), ' ');
+            if (controller.text != limpio) {
+              controller.text = limpio;
+              if (actualizarCurpRfc) {
+                _generarCurpYRfcAutomatico();
+              }
+              setState(() {});
+            }
+          }
+        }
+      });
+      return node;
+    });
+  }
+
+  _ControlLimiteFormatter _crearLimiteFormatter(String key, int maxLen) {
+    return _ControlLimiteFormatter(
+      maxLength: maxLen,
+      onLimiteExcedido: () {
+        if (mounted && _avisosLimite[key] == null) {
+          setState(() {
+            _avisosLimite[key] = 'Has superado el límite de caracteres permitido';
+          });
+        }
+      },
+      onDentroDeLimite: () {
+        if (mounted && _avisosLimite.containsKey(key)) {
+          setState(() {
+            _avisosLimite.remove(key);
+          });
+        }
+      },
+    );
+  }
 
   @override
   void dispose() {
+    _scrollController.dispose();
+    for (final node in _focusNodes.values) {
+      node.dispose();
+    }
     _nombreController.dispose();
     _apellidoPaternoController.dispose();
     _apellidoMaternoController.dispose();
@@ -391,102 +725,88 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Future<void> _autollenarPorCodigoPostal(String cp) async {
     final t = cp.trim();
-    if (t.length == 5) {
-      final cpNum = int.tryParse(t);
-      if (cpNum == null) return;
 
-      final prefijo = t.substring(0, 2);
-      String nuevoEstado = 'Ciudad de Mexico';
+    // Si cambia el código postal, limpiar país, estado, municipio, selección anterior y opciones de colonia
+    setState(() {
+      _paisController.clear();
+      _estadoController.clear();
+      _municipioController.clear();
+      _coloniaSeleccionada = null;
+      _coloniaController.clear();
+      _coloniasDisponibles = [];
+      _serverErrors.remove('codigoPostal');
+    });
 
-      switch (prefijo) {
-        case '01': case '02': case '03': case '04': case '05': case '06':
-        case '07': case '08': case '09': case '10': case '11': case '12':
-        case '13': case '14': case '15': case '16':
-          nuevoEstado = 'Ciudad de Mexico'; break;
-        case '20': nuevoEstado = 'Aguascalientes'; break;
-        case '21': case '22': nuevoEstado = 'Baja California'; break;
-        case '23': nuevoEstado = 'Baja California Sur'; break;
-        case '24': nuevoEstado = 'Campeche'; break;
-        case '25': case '26': case '27': nuevoEstado = 'Coahuila'; break;
-        case '28': nuevoEstado = 'Colima'; break;
-        case '29': case '30': nuevoEstado = 'Chiapas'; break;
-        case '31': case '32': case '33': nuevoEstado = 'Chihuahua'; break;
-        case '34': case '35': nuevoEstado = 'Durango'; break;
-        case '36': case '37': case '38': nuevoEstado = 'Guanajuato'; break;
-        case '39': case '40': case '41': nuevoEstado = 'Guerrero'; break;
-        case '42': case '43': nuevoEstado = 'Hidalgo'; break;
-        case '44': case '45': case '46': case '47': case '48': case '49':
-          nuevoEstado = 'Jalisco'; break;
-        case '50': case '51': case '52': case '53': case '54': case '55':
-        case '56': case '57':
-          nuevoEstado = 'Estado de Mexico'; break;
-        case '58': case '59': case '60': case '61': nuevoEstado = 'Michoacan'; break;
-        case '62': nuevoEstado = 'Morelos'; break;
-        case '63': nuevoEstado = 'Nayarit'; break;
-        case '64': case '65': case '66': case '67': nuevoEstado = 'Nuevo Leon'; break;
-        case '68': case '69': case '70': case '71': nuevoEstado = 'Oaxaca'; break;
-        case '72': case '73': case '74': case '75': nuevoEstado = 'Puebla'; break;
-        case '76': nuevoEstado = 'Queretaro'; break;
-        case '77': nuevoEstado = 'Quintana Roo'; break;
-        case '78': case '79': nuevoEstado = 'San Luis Potosi'; break;
-        case '80': case '81': case '82': nuevoEstado = 'Sinaloa'; break;
-        case '83': case '84': case '85': nuevoEstado = 'Sonora'; break;
-        case '86': nuevoEstado = 'Tabasco'; break;
-        case '87': case '88': case '89': nuevoEstado = 'Tamaulipas'; break;
-        case '90': nuevoEstado = 'Tlaxcala'; break;
-        case '91': case '92': case '93': case '94': case '95': case '96':
-          nuevoEstado = 'Veracruz'; break;
-        case '97': nuevoEstado = 'Yucatan'; break;
-        case '98': case '99': nuevoEstado = 'Zacatecas'; break;
+    if (t.length != 5 || int.tryParse(t) == null) {
+      return;
+    }
+
+    try {
+      final apiClient = context.read<ApiClient>();
+      final resp = await apiClient.dio.get('${ApiConstants.catalogos}/codigo-postal/$t');
+      if (!mounted || _cpController.text.trim() != t) return;
+
+      final body = resp.data;
+      final datos = (body is Map && body['datos'] is Map) ? body['datos'] as Map : null;
+      final paisApi = (datos?['pais'] ?? '').toString().trim();
+      final estApi = (datos?['estado'] ?? '').toString().trim();
+      final munApi = (datos?['municipio'] ?? '').toString().trim();
+
+      if (paisApi.isEmpty || estApi.isEmpty || munApi.isEmpty) {
+        setState(() {
+          _paisController.clear();
+          _estadoController.clear();
+          _municipioController.clear();
+          _coloniaSeleccionada = null;
+          _coloniaController.clear();
+          _coloniasDisponibles = [];
+          _serverErrors['codigoPostal'] = 'No se encontraron resultados para el código postal ingresado.';
+        });
+        return;
       }
-
-      final nuevoMunicipio = _resolverMunicipioSepomex(cpNum, prefijo);
 
       setState(() {
-        _estadoController.text = nuevoEstado;
-        _municipioController.text = nuevoMunicipio;
+        _paisController.text = paisApi;
+        _estadoController.text = estApi;
+        _municipioController.text = munApi;
+        _serverErrors.remove('codigoPostal');
+        _serverErrors.remove('pais');
+        _serverErrors.remove('estado');
+        _serverErrors.remove('municipio');
       });
-      _limpiarErrorServidor('estado');
-      _limpiarErrorServidor('municipio');
 
-      // Refinamiento asíncrono con catálogo oficial SEPOMEX para municipio y colonia exactos
-      try {
-        final dioCp = Dio(BaseOptions(
-          connectTimeout: const Duration(seconds: 5),
-          receiveTimeout: const Duration(seconds: 8),
-        ));
-        final resp = await dioCp.get('https://sepomex.kurenn.dev/api/v1/zip_codes', queryParameters: {'zip_code': t});
-        if (!mounted || _cpController.text.trim() != t) return;
-        final data = resp.data;
-        if (data is Map && data['zip_codes'] is List && (data['zip_codes'] as List).isNotEmpty) {
-          final item = (data['zip_codes'] as List).first;
-          if (item is Map) {
-            String limpiarSoloLetras(String raw) => raw
-                .replaceAll(RegExp(r'[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ ]'), ' ')
-                .replaceAll(RegExp(r'\s+'), ' ')
-                .trim();
-
-            final estApi = limpiarSoloLetras((item['d_estado'] ?? '').toString());
-            final munApi = limpiarSoloLetras((item['d_mnpio'] ?? '').toString());
-            final colApi = limpiarSoloLetras((item['d_asenta'] ?? '').toString());
-
-            setState(() {
-              if (_vEstado(estApi) == null) {
-                _estadoController.text = estApi;
-              }
-              if (_vMunicipio(munApi) == null) {
-                _municipioController.text = munApi;
-              }
-              if (_coloniaController.text.trim().isEmpty && _vColonia(colApi) == null) {
-                _coloniaController.text = colApi;
-                _limpiarErrorServidor('colonia');
-              }
-            });
-          }
-        }
-      } catch (_) {
-        // Si no hay respuesta externa, se conserva la resolución local SEPOMEX inmediata
-      }
+      // Cargar únicamente las colonias del municipio correspondiente mediante el API (sin seleccionar automáticamente)
+      await _cargarColonias(cp: t, municipio: munApi);
+    } on DioException catch (e) {
+      if (!mounted || _cpController.text.trim() != t) return;
+      final msg = ApiClient.parseError(e);
+      setState(() {
+        _paisController.clear();
+        _estadoController.clear();
+        _municipioController.clear();
+        _coloniaSeleccionada = null;
+        _coloniaController.clear();
+        _coloniasDisponibles = [];
+        _serverErrors['codigoPostal'] = msg;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(msg),
+          backgroundColor: AppTheme.errorColor,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (_) {
+      if (!mounted || _cpController.text.trim() != t) return;
+      setState(() {
+        _paisController.clear();
+        _estadoController.clear();
+        _municipioController.clear();
+        _coloniaSeleccionada = null;
+        _coloniaController.clear();
+        _coloniasDisponibles = [];
+        _serverErrors['codigoPostal'] = 'No fue posible consultar el código postal ingresado.';
+      });
     }
   }
 
@@ -604,25 +924,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final aammdd = '${anioStr.substring(2)}$mesStr$diaStr';
     final anioNum = int.tryParse(anioStr) ?? 1995;
 
-    // 3. Sexo (M / H)
-    final charSexo = (_sexo == 'FEMENINO') ? 'M' : 'H';
-
-    // 4. Entidad Federativa de Nacimiento (2 dígitos oficiales)
-    final cveEntidad = _entidadNacimiento;
-
-    // 5. Consonantes internas
-    final con1 = _primeraConsonanteInterna(pSignificativo);
-    final con2 = mSignificativo.isNotEmpty ? _primeraConsonanteInterna(mSignificativo) : 'X';
-    final con3 = _primeraConsonanteInterna(nSignificativo);
-
-    // 6. Diferenciador de siglo
-    final difSiglo = (anioNum >= 2000) ? 'A' : '0';
-
-    // 7. Base CURP de 17 caracteres y Dígito Verificador oficial RENAPO
-    final curp17 = '$cuatroLetras$aammdd$charSexo$cveEntidad$con1$con2$con3$difSiglo';
-    final digitoVerificador = _calcularDigitoVerificadorRenapo(curp17);
-    final curpOficial = '$curp17$digitoVerificador';
-
     // RFC: 10 caracteres base calculados según SAT + homoclave (3 caracteres)
     String homoclaveActual = 'AA1';
     if (_rfcController.text.trim().length == 13) {
@@ -630,8 +931,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
     final rfcOficial = '$cuatroLetras$aammdd$homoclaveActual';
 
+    String? curpOficial;
+    if (_sexo != null && _sexo!.isNotEmpty && _entidadNacimiento != null && _entidadNacimiento!.isNotEmpty) {
+      // 3. Sexo (M / H)
+      final charSexo = (_sexo == 'FEMENINO') ? 'M' : 'H';
+
+      // 4. Entidad Federativa de Nacimiento (2 dígitos oficiales)
+      final cveEntidad = _entidadNacimiento!;
+
+      // 5. Consonantes internas
+      final con1 = _primeraConsonanteInterna(pSignificativo);
+      final con2 = mSignificativo.isNotEmpty ? _primeraConsonanteInterna(mSignificativo) : 'X';
+      final con3 = _primeraConsonanteInterna(nSignificativo);
+
+      // 6. Diferenciador de siglo
+      final difSiglo = (anioNum >= 2000) ? 'A' : '0';
+
+      // 7. Base CURP de 17 caracteres y Dígito Verificador oficial RENAPO
+      final curp17 = '$cuatroLetras$aammdd$charSexo$cveEntidad$con1$con2$con3$difSiglo';
+      final digitoVerificador = _calcularDigitoVerificadorRenapo(curp17);
+      curpOficial = '$curp17$digitoVerificador';
+    }
+
     setState(() {
-      if (forzar || !_curpEditadoManualmente || _curpController.text.isEmpty) {
+      if (curpOficial != null && (forzar || !_curpEditadoManualmente || _curpController.text.isEmpty)) {
         _curpController.text = curpOficial;
       }
       if (forzar || !_rfcEditadoManualmente || _rfcController.text.isEmpty) {
@@ -640,25 +963,50 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
   }
 
-  Future<void> _seleccionarFechaNacimiento() async {
-    final fechaActual = DateTime.tryParse(_fechaNacimientoController.text.trim()) ?? DateTime(1995, 5, 15);
-    final nuevaFecha = await showDatePicker(
-      context: context,
-      initialDate: fechaActual,
-      firstDate: DateTime(1920),
-      lastDate: DateTime.now(),
-      locale: const Locale('es', 'MX'),
-    );
+  bool _abriendoCalendario = false;
 
-    if (nuevaFecha != null) {
-      final y = nuevaFecha.year.toString().padLeft(4, '0');
-      final m = nuevaFecha.month.toString().padLeft(2, '0');
-      final d = nuevaFecha.day.toString().padLeft(2, '0');
-      setState(() {
-        _fechaNacimientoController.text = '$y-$m-$d';
-      });
-      _limpiarErrorServidor('fechaNacimiento');
-      _generarCurpYRfcAutomatico(forzar: true);
+  Future<void> _seleccionarFechaNacimiento() async {
+    if (_abriendoCalendario || !mounted) return;
+    _abriendoCalendario = true;
+    FocusManager.instance.primaryFocus?.unfocus();
+
+    try {
+      final hoy = DateTime.now();
+      final primeraFecha = DateTime(1920, 1, 1);
+      final fechaBaseCalendario = DateTime(hoy.year - 18, hoy.month, hoy.day);
+      var fechaInicial =
+          DateTime.tryParse(_fechaNacimientoController.text.trim()) ?? fechaBaseCalendario;
+      if (fechaInicial.isBefore(primeraFecha) || fechaInicial.isAfter(hoy)) {
+        fechaInicial = fechaBaseCalendario;
+      }
+
+      final nuevaFecha = await showDatePicker(
+        context: context,
+        initialDate: fechaInicial,
+        firstDate: primeraFecha,
+        lastDate: hoy,
+        initialEntryMode: DatePickerEntryMode.calendar,
+        helpText: 'Seleccionar fecha de nacimiento',
+        cancelText: 'Cancelar',
+        confirmText: 'Aceptar',
+        fieldLabelText: 'Fecha de nacimiento',
+        fieldHintText: 'AAAA-MM-DD',
+        errorFormatText: 'Formato inválido (AAAA-MM-DD)',
+        errorInvalidText: 'Fecha fuera del rango permitido',
+      );
+
+      if (nuevaFecha != null && mounted) {
+        final y = nuevaFecha.year.toString().padLeft(4, '0');
+        final m = nuevaFecha.month.toString().padLeft(2, '0');
+        final d = nuevaFecha.day.toString().padLeft(2, '0');
+        setState(() {
+          _fechaNacimientoController.text = '$y-$m-$d';
+        });
+        _limpiarErrorServidor('fechaNacimiento');
+        _generarCurpYRfcAutomatico(forzar: true);
+      }
+    } finally {
+      _abriendoCalendario = false;
     }
   }
 
@@ -766,10 +1114,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     // Validación cruzada con Sexo (posición 11, índice 10)
-    final charSexo = curp[10];
-    final esperadoSexo = (_sexo == 'FEMENINO') ? 'M' : 'H';
-    if (charSexo != esperadoSexo) {
-      return 'La posición 11 del CURP ($charSexo) no coincide con el sexo ($_sexo: $esperadoSexo)';
+    if (_sexo != null && _sexo!.isNotEmpty) {
+      final charSexo = curp[10];
+      final esperadoSexo = (_sexo == 'FEMENINO') ? 'M' : 'H';
+      if (charSexo != esperadoSexo) {
+        return 'La posición 11 del CURP ($charSexo) no coincide con el sexo ($_sexo: $esperadoSexo)';
+      }
     }
 
     // Validación cruzada con Fecha de Nacimiento (posiciones 5 a 10)
@@ -783,7 +1133,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     // Validación cruzada con Entidad Federativa de Nacimiento (posiciones 12 a 13)
-    if (curp.length >= 13 && curp.substring(11, 13) != _entidadNacimiento) {
+    if (_entidadNacimiento != null &&
+        _entidadNacimiento!.isNotEmpty &&
+        curp.length >= 13 &&
+        curp.substring(11, 13) != _entidadNacimiento) {
       return 'Los caracteres 12-13 del CURP (${curp.substring(11, 13)}) no coinciden con la entidad de nacimiento ($_entidadNacimiento)';
     }
 
@@ -893,6 +1246,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (val == null || val.trim().isEmpty) {
       return 'El ingreso mensual es obligatorio';
     }
+    if (val.contains('\t')) {
+      return 'El ingreso mensual no permite tabulaciones';
+    }
+    if (val.startsWith(' ') || val.endsWith(' ')) {
+      return 'El ingreso mensual no permite espacios al inicio ni al final';
+    }
     final parsed = double.tryParse(val.trim());
     if (parsed == null || parsed <= 0) {
       return 'El ingreso mensual debe ser mayor a cero';
@@ -912,6 +1271,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (v.trim().isEmpty) {
       return obligatorio ? 'El campo $campo es obligatorio y no debe estar vacío' : null;
     }
+    if (v.contains('\t')) return 'El campo $campo no permite tabulaciones';
+    if (v.startsWith(' ')) return 'El campo $campo no puede iniciar con espacios';
+    if (v.endsWith(' ')) return 'El campo $campo no puede terminar con espacios';
+    if (v.contains('  ')) return 'No se permiten múltiples espacios internos consecutivos';
     if (v.trim().length < min) return 'El campo $campo debe tener al menos $min caracteres';
     if (v.length > max) return 'El campo $campo no puede exceder $max caracteres';
     if (regex != null && !regex.hasMatch(v.trim())) {
@@ -919,9 +1282,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
     return null;
   }
-
-  static final RegExp _reLetras = RegExp(r"^[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ .'-]{2,100}$");
-  static final RegExp _reColonia = RegExp(r"^[a-zA-Z0-9áéíóúÁÉÍÓÚñÑüÜ .'-]{2,100}$");
 
   // Mismas reglas estrictas que Nombre para campos alfabéticos de domicilio
   String? _validarTextoDomicilioLetras(String? val, String campo, {required int min, required int max}) {
@@ -957,7 +1317,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   String? _vCalle(String? v) => _validarTextoDomicilioLetras(v, 'calle', min: 3, max: 60);
-  String? _vColonia(String? v) => _validarTextoDomicilioLetras(v, 'colonia', min: 3, max: 60);
+  String? _vColonia(String? v) {
+    if (v == null || v.trim().isEmpty) {
+      return 'Seleccione una colonia del catálogo';
+    }
+    return _validarTextoDomicilioLetras(v, 'colonia', min: 3, max: 60);
+  }
   String? _vMunicipio(String? v) => _validarTextoDomicilioLetras(v, 'municipio o alcaldía', min: 3, max: 60);
   String? _vEstado(String? v) => _validarTextoDomicilioLetras(v, 'estado', min: 4, max: 40);
 
@@ -978,8 +1343,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
     return null;
   }
-  String? _vPais(String? v) => _validarTexto(v, 'país', 50,
-      regex: _reLetras, msgRegex: 'El país solo puede contener letras y espacios válidos');
+
+  String? _vPais(String? v) => _validarTextoDomicilioLetras(v, 'país', min: 2, max: 50);
+
   String? _vCp(String? v) {
     final t = (v ?? '').trim();
     if (t.isEmpty) return 'El código postal es obligatorio y no debe estar vacío';
@@ -988,23 +1354,33 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   String? _vEmpresa(String? v) => _validarTexto(v, 'empresa', 100);
+
   String? _vTelAlt(String? v) {
-    final t = (v ?? '').trim();
+    final t = v ?? '';
     if (t.isEmpty) return null;
-    if (!RegExp(r'^\d{10,15}$').hasMatch(t)) {
-      return 'El teléfono alternativo solo acepta dígitos (entre 10 y 15)';
+    if (!RegExp(r'^\d+$').hasMatch(t)) {
+      return 'El teléfono opcional solo permite números';
+    }
+    if (t.length != 10) {
+      return 'Debe ingresar exactamente 10 dígitos numéricos (capturados: ${t.length})';
     }
     return null;
   }
 
   bool get _isFormularioValido {
+    final coloniaActual = _coloniaSeleccionada ?? _coloniaController.text;
     return _validarNombreCompleto(_nombreController.text) == null &&
         _validarNombreOApellido(_apellidoPaternoController.text, 'apellido paterno') == null &&
         _validarNombreOApellido(_apellidoMaternoController.text, 'apellido materno') == null &&
         _validarFechaNacimiento(_fechaNacimientoController.text) == null &&
         _validarCurp(_curpController.text) == null &&
         _validarRfc(_rfcController.text) == null &&
-        _entidadNacimiento.isNotEmpty &&
+        _sexo != null &&
+        _sexo!.isNotEmpty &&
+        _entidadNacimiento != null &&
+        _entidadNacimiento!.isNotEmpty &&
+        _estadoCivil != null &&
+        _estadoCivil!.isNotEmpty &&
         _validarCorreo(_correoController.text) == null &&
         _validarTelefono(_telefonoController.text) == null &&
         _validarPassword(_passwordController.text) == null &&
@@ -1014,22 +1390,52 @@ class _RegisterScreenState extends State<RegisterScreen> {
         _vCalle(_calleController.text) == null &&
         _vNumExt(_numeroExtController.text) == null &&
         _vNumInt(_numeroIntController.text) == null &&
-        _vColonia(_coloniaController.text) == null &&
+        _vColonia(coloniaActual) == null &&
         _vMunicipio(_municipioController.text) == null &&
         _vEstado(_estadoController.text) == null &&
+        !_serverErrors.containsKey('codigoPostal') &&
         _vCp(_cpController.text) == null &&
         _vPais(_paisController.text) == null &&
-        _ocupacionSeleccionada.isNotEmpty &&
+        _ocupacionSeleccionada != null &&
+        _ocupacionSeleccionada!.isNotEmpty &&
+        _tipoCuenta != null &&
+        _tipoCuenta!.isNotEmpty &&
         _vEmpresa(_empresaController.text) == null;
   }
 
+  void _normalizarEspaciosEnControladores() {
+    final controladoresTexto = [
+      _nombreController,
+      _apellidoPaternoController,
+      _apellidoMaternoController,
+      _paisController,
+      _estadoController,
+      _municipioController,
+      _calleController,
+      _empresaController,
+      _ingresoController,
+      _saldoInicialController,
+      _correoController,
+      _telefonoController,
+      _telefonoAltController,
+    ];
+    for (final ctrl in controladoresTexto) {
+      final limpio = ctrl.text.trim().replaceAll(RegExp(r' {2,}'), ' ');
+      if (ctrl.text != limpio) {
+        ctrl.text = limpio;
+      }
+    }
+  }
+
   Future<void> _submitRegistro() async {
+    _normalizarEspaciosEnControladores();
     // Limpiar errores del servidor previos
     setState(() => _serverErrors = {});
 
     if (!_formKey.currentState!.validate()) return;
 
     final authProvider = context.read<AuthProvider>();
+    final coloniaFinal = (_coloniaSeleccionada ?? _coloniaController.text).trim();
 
     final datos = {
       'nombre': _nombreController.text.trim(),
@@ -1049,7 +1455,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       'calle': _calleController.text.trim(),
       'numeroExterior': _numeroExtController.text.trim(),
       'numeroInterior': _numeroIntController.text.trim().isNotEmpty ? _numeroIntController.text.trim() : null,
-      'colonia': _coloniaController.text.trim(),
+      'colonia': coloniaFinal,
       'municipio': _municipioController.text.trim(),
       'estado': _estadoController.text.trim(),
       'codigoPostal': _cpController.text.trim(),
@@ -1059,7 +1465,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       'ingresoMensual': double.tryParse(_ingresoController.text.trim()) ?? 0.0,
       'saldoInicial': double.tryParse(_saldoInicialController.text.trim()) ?? 1500.00,
       'tipoCuenta': _tipoCuenta,
-      'password': _passwordController.text.trim(),
+      'password': _passwordController.text,
     };
 
     final resultado = await authProvider.registrarCliente(datos);
@@ -1071,7 +1477,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (authProvider.registroFieldErrors.isNotEmpty) {
         setState(() {
           _serverErrors = Map<String, String>.from(authProvider.registroFieldErrors);
+          // Único caso en que se retrocede: llevar al usuario a la pantalla del campo con error del servidor
+          final pasoError = _pasoDeErrorServidor(_serverErrors);
+          if (pasoError != null && pasoError < _paso) {
+            _paso = pasoError;
+          }
         });
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(0);
+        }
       }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1132,8 +1546,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
         actions: [
           ElevatedButton(
             onPressed: () {
+              TextInput.finishAutofillContext(shouldSave: false);
+              _correoController.clear();
+              _passwordController.clear();
               Navigator.of(ctx).pop();
-              Navigator.of(context).pop(_correoController.text.trim().toLowerCase());
+              Navigator.of(context).pop(true);
             },
             child: const Text('Ir al Inicio de Sesión'),
           ),
@@ -1147,12 +1564,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final authProvider = context.watch<AuthProvider>();
     final formHabilitado = _isFormularioValido && authProvider.status != AuthStatus.loading;
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _confirmarRegresarInicio();
+      },
+      child: Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
+        leadingWidth: 110,
+        leading: TextButton.icon(
+          onPressed: _confirmarRegresarInicio,
+          icon: const Icon(Icons.home, color: Colors.white),
+          label: const Text('Inicio', style: TextStyle(color: Colors.white)),
+        ),
         title: const Text('Crear Nueva Cuenta Bancaria'),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
+          controller: _scrollController,
           padding: ResponsiveUtil.pagePadding(context),
           child: Center(
             child: ConstrainedBox(
@@ -1162,7 +1592,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   padding: const EdgeInsets.all(24),
                   child: Form(
                     key: _formKey,
-                    autovalidateMode: AutovalidateMode.onUserInteraction,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -1177,59 +1606,68 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                         const Divider(height: 28),
 
-                        // SECCIÓN 1: DATOS PERSONALES
+                        // Indicador de progreso (solo informativo, no seleccionable)
+                        _buildIndicadorProgreso(),
+                        const SizedBox(height: 20),
+
+                        // PANTALLA 1: DATOS PERSONALES
+                        if (_paso == 0) ...[
                         _buildSectionHeader('1. Datos Personales', Icons.person_outline),
                         const SizedBox(height: 12),
-                        CustomTextField(
+                        _campo(
                           controller: _nombreController,
                           label: 'Nombre completo *',
                           hint: 'Ej. María del Carmen, Juan Carlos, José Luis Antonio',
-                          prefixIcon: Icons.badge_outlined,
-                          errorText: _serverErrors['nombre'],
+                          icon: Icons.badge_outlined,
+                          errorKey: 'nombre',
                           textCapitalization: TextCapitalization.words,
-                          inputFormatters: [LengthLimitingTextInputFormatter(100)],
-                          onChanged: (_) {
-                            _limpiarErrorServidor('nombre');
-                            _generarCurpYRfcAutomatico();
-                            setState(() {});
-                          },
+                          limpiarEspaciosExtremos: true,
+                          actualizarCurpRfc: true,
+                          formatters: [
+                            _SoloLetrasEspacioUnicoFormatter(),
+                            _crearLimiteFormatter('nombre', 100),
+                          ],
+                          onChanged: (_) => _generarCurpYRfcAutomatico(),
                           validator: _validarNombreCompleto,
                         ),
                         const SizedBox(height: 12),
                         _FilaResponsiva(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
-                              child: CustomTextField(
+                              child: _campo(
                                 controller: _apellidoPaternoController,
                                 label: 'Apellido Paterno *',
                                 hint: 'Ej. Perez',
-                                prefixIcon: Icons.person,
-                                errorText: _serverErrors['apellidoPaterno'],
+                                icon: Icons.person,
+                                errorKey: 'apellidoPaterno',
                                 textCapitalization: TextCapitalization.words,
-                                inputFormatters: [LengthLimitingTextInputFormatter(50)],
-                                onChanged: (_) {
-                                  _limpiarErrorServidor('apellidoPaterno');
-                                  _generarCurpYRfcAutomatico();
-                                  setState(() {});
-                                },
+                                limpiarEspaciosExtremos: true,
+                                actualizarCurpRfc: true,
+                                formatters: [
+                                  _SoloLetrasEspacioUnicoFormatter(),
+                                  _crearLimiteFormatter('apellidoPaterno', 50),
+                                ],
+                                onChanged: (_) => _generarCurpYRfcAutomatico(),
                                 validator: (v) => _validarNombreOApellido(v, 'apellido paterno'),
                               ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
-                              child: CustomTextField(
+                              child: _campo(
                                 controller: _apellidoMaternoController,
                                 label: 'Apellido Materno *',
                                 hint: 'Ej. Lopez',
-                                prefixIcon: Icons.person,
-                                errorText: _serverErrors['apellidoMaterno'],
+                                icon: Icons.person,
+                                errorKey: 'apellidoMaterno',
                                 textCapitalization: TextCapitalization.words,
-                                inputFormatters: [LengthLimitingTextInputFormatter(50)],
-                                onChanged: (_) {
-                                  _limpiarErrorServidor('apellidoMaterno');
-                                  _generarCurpYRfcAutomatico();
-                                  setState(() {});
-                                },
+                                limpiarEspaciosExtremos: true,
+                                actualizarCurpRfc: true,
+                                formatters: [
+                                  _SoloLetrasEspacioUnicoFormatter(),
+                                  _crearLimiteFormatter('apellidoMaterno', 50),
+                                ],
+                                onChanged: (_) => _generarCurpYRfcAutomatico(),
                                 validator: (v) => _validarNombreOApellido(v, 'apellido materno'),
                               ),
                             ),
@@ -1239,23 +1677,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                         // Fecha de Nacimiento con Selector Calendario
                         _FilaResponsiva(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
-                              child: CustomTextField(
+                              child: _campo(
                                 controller: _fechaNacimientoController,
                                 label: 'Fecha de Nacimiento (Mayor de 18) *',
                                 hint: 'AAAA-MM-DD',
-                                prefixIcon: Icons.cake_outlined,
-                                errorText: _serverErrors['fechaNacimiento'],
+                                icon: Icons.cake_outlined,
+                                errorKey: 'fechaNacimiento',
+                                readOnly: true,
+                                onTap: _seleccionarFechaNacimiento,
                                 suffixIcon: IconButton(
+                                  tooltip: 'Abrir calendario',
                                   icon: const Icon(Icons.calendar_month, color: AppTheme.primaryColor),
                                   onPressed: _seleccionarFechaNacimiento,
                                 ),
-                                onChanged: (_) {
-                                  _limpiarErrorServidor('fechaNacimiento');
-                                  _generarCurpYRfcAutomatico(forzar: true);
-                                  setState(() {});
-                                },
+                                formatters: [
+                                  FilteringTextInputFormatter.allow(RegExp(r'[0-9-]')),
+                                  _crearLimiteFormatter('fechaNacimiento', 10),
+                                ],
+                                onChanged: (_) => _generarCurpYRfcAutomatico(forzar: true),
                                 validator: _validarFechaNacimiento,
                               ),
                             ),
@@ -1263,37 +1705,48 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                         const SizedBox(height: 12),
 
-                        // Sexo y Entidad Federativa de Nacimiento (32 estados independientes del domicilio)
+                        // Sexo y Entidad Federativa de Nacimiento (sin selección por defecto)
                         _FilaResponsiva(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
                               flex: 4,
                               child: DropdownButtonFormField<String>(
                                 value: _sexo,
+                                autovalidateMode: AutovalidateMode.onUserInteraction,
                                 decoration: InputDecoration(
                                   labelText: 'Sexo *',
                                   errorText: _serverErrors['sexo'],
+                                  errorMaxLines: 4,
                                 ),
+                                hint: const Text('Seleccione', overflow: TextOverflow.ellipsis),
                                 items: const [
                                   DropdownMenuItem(value: 'MASCULINO', child: Text('Masculino (H)')),
                                   DropdownMenuItem(value: 'FEMENINO', child: Text('Femenino (M)')),
                                 ],
                                 onChanged: (v) {
-                                  setState(() => _sexo = v ?? 'MASCULINO');
+                                  setState(() => _sexo = v);
                                   _limpiarErrorServidor('sexo');
                                   _generarCurpYRfcAutomatico(forzar: true);
                                 },
+                                validator: (v) =>
+                                    (v == null || v.isEmpty) ? 'Seleccione el sexo' : null,
                               ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
                               flex: 6,
                               child: DropdownButtonFormField<String>(
-                                value: _entidadNacimiento,
+                                value: _entidadesFederativasCatalogo.any((e) => e['codigo'] == _entidadNacimiento)
+                                    ? _entidadNacimiento
+                                    : null,
+                                autovalidateMode: AutovalidateMode.onUserInteraction,
                                 decoration: InputDecoration(
                                   labelText: 'Entidad Federativa de Nacimiento *',
                                   errorText: _serverErrors['entidadNacimiento'],
+                                  errorMaxLines: 4,
                                 ),
+                                hint: const Text('Seleccione entidad federativa', overflow: TextOverflow.ellipsis),
                                 isExpanded: true,
                                 items: _entidadesFederativasCatalogo.map((entidad) {
                                   return DropdownMenuItem<String>(
@@ -1305,29 +1758,39 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   );
                                 }).toList(),
                                 onChanged: (v) {
-                                  setState(() => _entidadNacimiento = v ?? 'DF');
+                                  setState(() => _entidadNacimiento = v);
                                   _limpiarErrorServidor('entidadNacimiento');
-                                  _generarCurpYRfcAutomatico();
+                                  _generarCurpYRfcAutomatico(forzar: true);
                                 },
+                                validator: (v) => (v == null || v.isEmpty)
+                                    ? 'Seleccione su entidad federativa'
+                                    : null,
                               ),
                             ),
                           ],
                         ),
                         const SizedBox(height: 12),
 
-                        // Estado Civil dinámico desde catálogo con formato Soltero(a), Casado(a)...
+                        // Estado Civil dinámico desde catálogo (vacío inicialmente)
                         _FilaResponsiva(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
                               child: DropdownButtonFormField<String>(
-                                value: _estadoCivil,
+                                value: _estadosCivilesCatalogo.any((item) =>
+                                        (item['descripcion'] ?? item['codigo']).toString() == _estadoCivil)
+                                    ? _estadoCivil
+                                    : null,
+                                autovalidateMode: AutovalidateMode.onUserInteraction,
                                 decoration: InputDecoration(
                                   labelText: 'Estado Civil *',
                                   errorText: _serverErrors['estadoCivil'],
+                                  errorMaxLines: 4,
                                 ),
+                                hint: const Text('Seleccione estado civil', overflow: TextOverflow.ellipsis),
                                 isExpanded: true,
                                 items: _estadosCivilesCatalogo.map((item) {
-                                  final val = (item['descripcion'] ?? item['codigo'] ?? 'SOLTERO').toString();
+                                  final val = (item['descripcion'] ?? item['codigo'] ?? '').toString();
                                   final nom = (item['nombre'] ?? item['descripcion'] ?? val).toString();
                                   return DropdownMenuItem<String>(
                                     value: val,
@@ -1335,9 +1798,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                   );
                                 }).toList(),
                                 onChanged: (v) {
-                                  setState(() => _estadoCivil = v ?? 'SOLTERO');
+                                  setState(() => _estadoCivil = v);
                                   _limpiarErrorServidor('estadoCivil');
                                 },
+                                validator: (v) =>
+                                    (v == null || v.isEmpty) ? 'Seleccione su estado civil' : null,
                               ),
                             ),
                           ],
@@ -1346,44 +1811,43 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                         // CURP y RFC: 100% editables, no readonly, no disabled, calculados automáticamente
                         _FilaResponsiva(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
-                              child: CustomTextField(
+                              child: _campo(
                                 controller: _curpController,
                                 label: 'CURP (18 caracteres) *',
                                 hint: 'AAAA000000HAAAAA00',
-                                prefixIcon: Icons.fingerprint,
-                                errorText: _serverErrors['curp'],
+                                icon: Icons.fingerprint,
+                                errorKey: 'curp',
                                 textCapitalization: TextCapitalization.characters,
-                                inputFormatters: [
-                                  LengthLimitingTextInputFormatter(18),
+                                formatters: [
+                                  _SinEspaciosNiTabsFormatter(),
                                   FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
+                                  _crearLimiteFormatter('curp', 18),
                                 ],
-                                onChanged: (v) {
+                                onChanged: (_) {
                                   _curpEditadoManualmente = true;
-                                  _limpiarErrorServidor('curp');
-                                  setState(() {});
                                 },
                                 validator: _validarCurp,
                               ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
-                              child: CustomTextField(
+                              child: _campo(
                                 controller: _rfcController,
                                 label: 'RFC (12 o 13 caracteres) *',
                                 hint: 'AAAA000000AAA',
-                                prefixIcon: Icons.credit_card,
-                                errorText: _serverErrors['rfc'],
+                                icon: Icons.credit_card,
+                                errorKey: 'rfc',
                                 textCapitalization: TextCapitalization.characters,
-                                inputFormatters: [
-                                  LengthLimitingTextInputFormatter(13),
+                                formatters: [
+                                  _SinEspaciosNiTabsFormatter(),
                                   FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9&Ññ]')),
+                                  _crearLimiteFormatter('rfc', 13),
                                 ],
-                                onChanged: (v) {
+                                onChanged: (_) {
                                   _rfcEditadoManualmente = true;
-                                  _limpiarErrorServidor('rfc');
-                                  setState(() {});
                                 },
                                 validator: _validarRfc,
                               ),
@@ -1391,78 +1855,79 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ],
                         ),
 
-                        const Divider(height: 32),
+                        ],
 
-                        // SECCIÓN 2: CONTACTO Y SEGURIDAD
+                        // PANTALLA 2: CONTACTO Y SEGURIDAD
+                        if (_paso == 1) ...[
                         _buildSectionHeader('2. Contacto y Credenciales de Acceso', Icons.security_outlined),
                         const SizedBox(height: 12),
-                        CustomTextField(
+                        _campo(
                           controller: _correoController,
                           label: 'Correo Electrónico (Usuario de acceso) *',
                           hint: 'ejemplo@correo.com',
-                          prefixIcon: Icons.email_outlined,
-                          errorText: _serverErrors['correoElectronico'] ?? _serverErrors['correo'],
+                          icon: Icons.email_outlined,
+                          errorKey: 'correoElectronico',
+                          altErrorKey: 'correo',
                           keyboardType: TextInputType.emailAddress,
-                          inputFormatters: [LengthLimitingTextInputFormatter(100)],
-                          onChanged: (_) {
-                            _limpiarErrorServidor('correoElectronico');
-                            _limpiarErrorServidor('correo');
-                            setState(() {});
-                          },
+                          limpiarEspaciosExtremos: true,
+                          formatters: [
+                            _SinEspaciosNiTabsFormatter(),
+                            _crearLimiteFormatter('correoElectronico', 100),
+                          ],
                           validator: _validarCorreo,
                         ),
                         const SizedBox(height: 12),
-                        CustomTextField(
+                        _campo(
                           controller: _telefonoController,
                           label: 'Teléfono Móvil (Exactamente 10 dígitos) *',
                           hint: '5512345678',
-                          prefixIcon: Icons.phone_android_outlined,
-                          errorText: _serverErrors['telefonoMovil'],
+                          icon: Icons.phone_android_outlined,
+                          errorKey: 'telefonoMovil',
                           keyboardType: TextInputType.phone,
-                          inputFormatters: [
+                          formatters: [
                             FilteringTextInputFormatter.digitsOnly,
-                            LengthLimitingTextInputFormatter(10),
+                            _crearLimiteFormatter('telefonoMovil', 10),
                           ],
-                          onChanged: (_) {
-                            _limpiarErrorServidor('telefonoMovil');
-                            setState(() {});
-                          },
                           validator: _validarTelefono,
                         ),
                         const SizedBox(height: 12),
                         _campo(
                           controller: _telefonoAltController,
-                          label: 'Teléfono Alternativo (Opcional, 10 a 15 dígitos)',
+                          label: 'Teléfono Alternativo (Opcional, 10 dígitos)',
                           hint: '8182345678',
                           icon: Icons.phone_outlined,
                           errorKey: 'telefonoAlternativo',
                           keyboardType: TextInputType.phone,
-                          formatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(15)],
+                          formatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            _crearLimiteFormatter('telefonoAlternativo', 10),
+                          ],
                           validator: _vTelAlt,
                         ),
                         const SizedBox(height: 12),
-                        CustomTextField(
+                        _campo(
                           controller: _passwordController,
                           label: 'Contraseña de Acceso *',
                           hint: 'Mínimo 8 car., 1 mayús., 1 núm., 1 especial',
-                          prefixIcon: Icons.lock_outline,
-                          errorText: _serverErrors['password'],
+                          icon: Icons.lock_outline,
+                          errorKey: 'password',
                           obscureText: _obscurePassword,
-                          inputFormatters: [LengthLimitingTextInputFormatter(50)],
+                          desactivarAutocompletado: true,
+                          formatters: [
+                            _SinEspaciosNiTabsFormatter(),
+                            _crearLimiteFormatter('password', 50),
+                          ],
                           suffixIcon: IconButton(
                             icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility),
                             onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                           ),
-                          onChanged: (_) {
-                            _limpiarErrorServidor('password');
-                            setState(() {});
-                          },
                           validator: _validarPassword,
                         ),
 
-                        const Divider(height: 32),
+                        ],
 
-                        // SECCIÓN 3: DOMICILIO
+                        // PANTALLA 3: DOMICILIO
+                        if (_paso == 2) ...[
                         _buildSectionHeader('3. Domicilio', Icons.home_outlined),
                         const SizedBox(height: 12),
                         _FilaResponsiva(
@@ -1476,7 +1941,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 icon: Icons.markunread_mailbox_outlined,
                                 errorKey: 'codigoPostal',
                                 keyboardType: TextInputType.number,
-                                formatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(5)],
+                                formatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                  _crearLimiteFormatter('codigoPostal', 5),
+                                ],
                                 onChanged: _autollenarPorCodigoPostal,
                                 validator: _vCp,
                               ),
@@ -1489,7 +1957,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 hint: 'Mexico',
                                 icon: Icons.public,
                                 errorKey: 'pais',
-                                formatters: [LengthLimitingTextInputFormatter(50)],
+                                textCapitalization: TextCapitalization.words,
+                                limpiarEspaciosExtremos: true,
+                                formatters: [
+                                  _SoloLetrasEspacioUnicoFormatter(),
+                                  _crearLimiteFormatter('pais', 50),
+                                ],
                                 validator: _vPais,
                               ),
                             ),
@@ -1506,9 +1979,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 hint: 'Guanajuato',
                                 icon: Icons.map_outlined,
                                 errorKey: 'estado',
+                                textCapitalization: TextCapitalization.words,
+                                limpiarEspaciosExtremos: true,
                                 formatters: [
-                                  LengthLimitingTextInputFormatter(40),
-                                  FilteringTextInputFormatter.allow(RegExp(r'[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ ]')),
+                                  _SoloLetrasEspacioUnicoFormatter(),
+                                  _crearLimiteFormatter('estado', 40),
                                 ],
                                 validator: _vEstado,
                               ),
@@ -1521,9 +1996,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 hint: 'San Luis de la Paz',
                                 icon: Icons.location_city_outlined,
                                 errorKey: 'municipio',
+                                textCapitalization: TextCapitalization.words,
+                                limpiarEspaciosExtremos: true,
                                 formatters: [
-                                  LengthLimitingTextInputFormatter(60),
-                                  FilteringTextInputFormatter.allow(RegExp(r'[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ ]')),
+                                  _SoloLetrasEspacioUnicoFormatter(),
+                                  _crearLimiteFormatter('municipio', 60),
                                 ],
                                 validator: _vMunicipio,
                               ),
@@ -1531,17 +2008,62 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        _campo(
-                          controller: _coloniaController,
-                          label: 'Colonia *',
-                          hint: 'Centro',
-                          icon: Icons.holiday_village_outlined,
-                          errorKey: 'colonia',
-                          formatters: [
-                            LengthLimitingTextInputFormatter(60),
-                            FilteringTextInputFormatter.allow(RegExp(r'[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ ]')),
-                          ],
-                          validator: _vColonia,
+                        DropdownButtonFormField<String>(
+                          key: ValueKey(
+                            'colonia_${_cpController.text.trim()}_${_coloniasDisponibles.length}',
+                          ),
+                          value: _coloniasDisponibles.contains(_coloniaSeleccionada)
+                              ? _coloniaSeleccionada
+                              : null,
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
+                          isExpanded: true,
+                          decoration: InputDecoration(
+                            labelText: 'Colonia *',
+                            prefixIcon: const Icon(Icons.holiday_village_outlined, size: 22),
+                            errorText: _serverErrors['colonia'],
+                            errorMaxLines: 5,
+                            suffixIcon: _cargandoColonias
+                                ? const Padding(
+                                    padding: EdgeInsets.all(12),
+                                    child: SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    ),
+                                  )
+                                : (_coloniasDisponibles.isEmpty && _cpController.text.trim().length == 5
+                                    ? IconButton(
+                                        tooltip: 'Recargar colonias del código postal',
+                                        icon: const Icon(Icons.refresh, size: 20),
+                                        onPressed: () => _cargarColonias(
+                                          cp: _cpController.text,
+                                          municipio: _municipioController.text,
+                                        ),
+                                      )
+                                    : null),
+                          ),
+                          hint: Text(
+                            _cargandoColonias
+                                ? 'Consultando colonias del municipio...'
+                                : (_coloniasDisponibles.isEmpty
+                                    ? 'Ingrese un código postal válido para ver colonias'
+                                    : 'Seleccione manualmente su colonia'),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          items: _coloniasDisponibles.map((colonia) {
+                            return DropdownMenuItem<String>(
+                              value: colonia,
+                              child: Text(colonia, overflow: TextOverflow.ellipsis),
+                            );
+                          }).toList(),
+                          onChanged: (val) {
+                            setState(() {
+                              _coloniaSeleccionada = val;
+                              _coloniaController.text = val ?? '';
+                            });
+                            _limpiarErrorServidor('colonia');
+                          },
+                          validator: (val) => _vColonia(val ?? _coloniaController.text),
                         ),
                         const SizedBox(height: 12),
                         _campo(
@@ -1550,9 +2072,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           hint: 'Avenida Constitucion',
                           icon: Icons.signpost_outlined,
                           errorKey: 'calle',
+                          textCapitalization: TextCapitalization.words,
+                          limpiarEspaciosExtremos: true,
                           formatters: [
-                            LengthLimitingTextInputFormatter(60),
-                            FilteringTextInputFormatter.allow(RegExp(r'[a-zA-ZáéíóúÁÉÍÓÚñÑüÜ ]')),
+                            _SoloLetrasEspacioUnicoFormatter(),
+                            _crearLimiteFormatter('calle', 60),
                           ],
                           validator: _vCalle,
                         ),
@@ -1570,7 +2094,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 keyboardType: TextInputType.number,
                                 formatters: [
                                   FilteringTextInputFormatter.digitsOnly,
-                                  LengthLimitingTextInputFormatter(6),
+                                  _crearLimiteFormatter('numeroExterior', 6),
                                 ],
                                 validator: _vNumExt,
                               ),
@@ -1586,7 +2110,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 keyboardType: TextInputType.number,
                                 formatters: [
                                   FilteringTextInputFormatter.digitsOnly,
-                                  LengthLimitingTextInputFormatter(6),
+                                  _crearLimiteFormatter('numeroInterior', 6),
                                 ],
                                 validator: _vNumInt,
                               ),
@@ -1594,18 +2118,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ],
                         ),
 
-                        const Divider(height: 32),
+                        ],
 
-                        // SECCIÓN 4: INFORMACIÓN LABORAL
+                        // PANTALLA 4: INFORMACIÓN LABORAL
+                        if (_paso == 3) ...[
                         _buildSectionHeader('4. Información Laboral', Icons.work_outline),
                         const SizedBox(height: 12),
                         DropdownButtonFormField<String>(
                           value: _ocupacionSeleccionada,
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
                           decoration: InputDecoration(
                             labelText: 'Ocupación *',
                             prefixIcon: const Icon(Icons.badge_outlined, color: AppTheme.primaryColor),
                             errorText: _serverErrors['ocupacion'],
+                            errorMaxLines: 4,
                           ),
+                          hint: const Text('Seleccione su ocupación', overflow: TextOverflow.ellipsis),
+                          isExpanded: true,
                           items: const [
                             DropdownMenuItem(value: 'Analista Financiero', child: Text('Analista Financiero')),
                             DropdownMenuItem(value: 'Ingeniero de Software / TI', child: Text('Ingeniero de Software / TI')),
@@ -1624,9 +2153,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             DropdownMenuItem(value: 'Otro', child: Text('Otro')),
                           ],
                           onChanged: (v) {
-                            setState(() => _ocupacionSeleccionada = v ?? 'Analista Financiero');
+                            setState(() => _ocupacionSeleccionada = v);
                             _limpiarErrorServidor('ocupacion');
                           },
+                          validator: (v) =>
+                              (v == null || v.isEmpty) ? 'Seleccione su ocupación' : null,
                         ),
                         const SizedBox(height: 12),
                         _campo(
@@ -1635,7 +2166,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           hint: 'Grupo Finanzas del Norte',
                           icon: Icons.business_outlined,
                           errorKey: 'empresa',
-                          formatters: [LengthLimitingTextInputFormatter(100)],
+                          limpiarEspaciosExtremos: true,
+                          formatters: [
+                            _SinTabulacionEspacioUnicoFormatter(),
+                            _crearLimiteFormatter('empresa', 100),
+                          ],
                           validator: _vEmpresa,
                         ),
                         const SizedBox(height: 12),
@@ -1646,56 +2181,85 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           icon: Icons.payments_outlined,
                           errorKey: 'ingresoMensual',
                           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          formatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+                          limpiarEspaciosExtremos: true,
+                          bloquearTab: true,
+                          suffixIcon: _buildSpinnerIngreso(),
+                          formatters: [
+                            _MonedaInputFormatter(),
+                            _crearLimiteFormatter('ingresoMensual', 13),
+                          ],
                           validator: _validarIngreso,
                         ),
 
-                        const Divider(height: 32),
+                        ],
 
-                        // SECCIÓN 5: CUENTA Y SALDO INICIAL
+                        // PANTALLA 5: CUENTA Y SALDO INICIAL
+                        if (_paso == 4) ...[
                         _buildSectionHeader('5. Configuración de Cuenta Bancaria', Icons.account_balance_outlined),
                         const SizedBox(height: 12),
                         _FilaResponsiva(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
                               child: DropdownButtonFormField<String>(
                                 value: _tipoCuenta,
-                                decoration: const InputDecoration(labelText: 'Tipo de Cuenta'),
+                                autovalidateMode: AutovalidateMode.onUserInteraction,
+                                decoration: const InputDecoration(
+                                  labelText: 'Tipo de Cuenta *',
+                                  errorMaxLines: 4,
+                                ),
+                                hint: const Text('Seleccione tipo de cuenta', overflow: TextOverflow.ellipsis),
+                                isExpanded: true,
                                 items: const [
                                   DropdownMenuItem(value: 'DEBITO', child: Text('Débito')),
                                   DropdownMenuItem(value: 'AHORRO', child: Text('Ahorro')),
+                                  DropdownMenuItem(value: 'NOMINA', child: Text('Nómina')),
+                                  DropdownMenuItem(value: 'CHEQUES', child: Text('Cheques')),
                                 ],
-                                onChanged: (v) => setState(() => _tipoCuenta = v ?? 'DEBITO'),
+                                onChanged: (v) => setState(() => _tipoCuenta = v),
+                                validator: (v) =>
+                                    (v == null || v.isEmpty) ? 'Seleccione un tipo de cuenta' : null,
                               ),
                             ),
                             const SizedBox(width: 12),
                             Expanded(
-                              child: CustomTextField(
+                              child: _campo(
                                 controller: _saldoInicialController,
                                 label: 'Saldo Inicial (MXN) *',
                                 hint: 'Mayor o igual a 0.00 (máx. 2 dec.)',
-                                prefixIcon: Icons.attach_money,
-                                errorText: _serverErrors['saldoInicial'],
+                                icon: Icons.attach_money,
+                                errorKey: 'saldoInicial',
                                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                onChanged: (_) {
-                                  _limpiarErrorServidor('saldoInicial');
-                                  setState(() {});
-                                },
+                                limpiarEspaciosExtremos: true,
+                                formatters: [
+                                  _MonedaInputFormatter(),
+                                  _crearLimiteFormatter('saldoInicial', 15),
+                                ],
                                 validator: _validarSaldoInicial,
                               ),
                             ),
                           ],
                         ),
 
+                        ],
+
                         const SizedBox(height: 28),
 
-                        // BOTÓN REGISTRAR REACTIVO (SE DESHABILITA SI HAY ERRORES O CAMPOS INCOMPLETOS)
-                        CustomButton(
-                          text: 'Crear Mi Cuenta Bancaria',
-                          isLoading: authProvider.status == AuthStatus.loading,
-                          onPressed: formHabilitado ? _submitRegistro : null,
-                        ),
-                        if (!formHabilitado && authProvider.status != AuthStatus.loading) ...[
+                        // PANTALLAS 1-4: botón Siguiente (se habilita con los campos obligatorios válidos de la pantalla actual)
+                        // PANTALLA 5: botón actual para crear la cuenta bancaria
+                        if (_paso < _totalPasos - 1)
+                          CustomButton(
+                            text: 'Siguiente',
+                            onPressed: _pasoValido(_paso) ? _avanzarPaso : null,
+                          )
+                        else
+                          CustomButton(
+                            text: 'Crear Mi Cuenta Bancaria',
+                            isLoading: authProvider.status == AuthStatus.loading,
+                            onPressed: formHabilitado ? _submitRegistro : null,
+                          ),
+                        if (!(_paso < _totalPasos - 1 ? _pasoValido(_paso) : formHabilitado) &&
+                            authProvider.status != AuthStatus.loading) ...[
                           const SizedBox(height: 8),
                           const Center(
                             child: Text(
@@ -1706,8 +2270,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ],
                         const SizedBox(height: 12),
                         TextButton(
-                          onPressed: () => Navigator.of(context).pop(),
-                          child: const Text('¿Ya tienes cuenta? Regresar al Inicio de Sesión'),
+                          onPressed: _confirmarRegresarInicio,
+                          child: const Text('¿Ya tienes cuenta? Regresar al inicio'),
                         ),
                       ],
                     ),
@@ -1718,6 +2282,193 @@ class _RegisterScreenState extends State<RegisterScreen> {
           ),
         ),
       ),
+      ),
+    );
+  }
+
+  // --- NAVEGACIÓN POR PANTALLAS (solo avanzar con Siguiente) ---
+  static const int _totalPasos = 5;
+  int _paso = 0;
+  final ScrollController _scrollController = ScrollController();
+
+  bool _pasoValido(int paso) {
+    switch (paso) {
+      case 0:
+        return _validarNombreCompleto(_nombreController.text) == null &&
+            _validarNombreOApellido(_apellidoPaternoController.text, 'apellido paterno') == null &&
+            _validarNombreOApellido(_apellidoMaternoController.text, 'apellido materno') == null &&
+            _validarFechaNacimiento(_fechaNacimientoController.text) == null &&
+            _sexo != null &&
+            _sexo!.isNotEmpty &&
+            _entidadNacimiento != null &&
+            _entidadNacimiento!.isNotEmpty &&
+            _estadoCivil != null &&
+            _estadoCivil!.isNotEmpty &&
+            _validarCurp(_curpController.text) == null &&
+            _validarRfc(_rfcController.text) == null;
+      case 1:
+        return _validarCorreo(_correoController.text) == null &&
+            _validarTelefono(_telefonoController.text) == null &&
+            _vTelAlt(_telefonoAltController.text) == null &&
+            _validarPassword(_passwordController.text) == null;
+      case 2:
+        return !_serverErrors.containsKey('codigoPostal') &&
+            _vCp(_cpController.text) == null &&
+            _vPais(_paisController.text) == null &&
+            _vEstado(_estadoController.text) == null &&
+            _vMunicipio(_municipioController.text) == null &&
+            _vColonia(_coloniaSeleccionada ?? _coloniaController.text) == null &&
+            _vCalle(_calleController.text) == null &&
+            _vNumExt(_numeroExtController.text) == null &&
+            _vNumInt(_numeroIntController.text) == null;
+      case 3:
+        return _ocupacionSeleccionada != null &&
+            _ocupacionSeleccionada!.isNotEmpty &&
+            _vEmpresa(_empresaController.text) == null &&
+            _validarIngreso(_ingresoController.text) == null;
+      default:
+        return _tipoCuenta != null &&
+            _tipoCuenta!.isNotEmpty &&
+            _validarSaldoInicial(_saldoInicialController.text) == null;
+    }
+  }
+
+  void _avanzarPaso() {
+    _normalizarEspaciosEnControladores();
+    if (!(_formKey.currentState?.validate() ?? false) || !_pasoValido(_paso)) {
+      setState(() {});
+      return;
+    }
+    if (_paso < _totalPasos - 1) {
+      setState(() => _paso++);
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(0);
+      }
+    }
+  }
+
+  // Devuelve la pantalla (0-4) más temprana que contiene un campo con error devuelto por el servidor
+  int? _pasoDeErrorServidor(Map<String, String> errores) {
+    const pasoPorCampo = <String, int>{
+      'nombre': 0, 'apellidoPaterno': 0, 'apellidoMaterno': 0, 'fechaNacimiento': 0,
+      'curp': 0, 'rfc': 0, 'sexo': 0, 'entidadNacimiento': 0, 'estadoCivil': 0,
+      'correoElectronico': 1, 'correo': 1, 'telefonoMovil': 1, 'telefonoAlternativo': 1, 'password': 1,
+      'codigoPostal': 2, 'pais': 2, 'estado': 2, 'municipio': 2, 'colonia': 2,
+      'calle': 2, 'numeroExterior': 2, 'numeroInterior': 2,
+      'ocupacion': 3, 'empresa': 3, 'ingresoMensual': 3,
+      'saldoInicial': 4, 'tipoCuenta': 4,
+    };
+    int? menor;
+    for (final campo in errores.keys) {
+      final paso = pasoPorCampo[campo];
+      if (paso != null && (menor == null || paso < menor)) {
+        menor = paso;
+      }
+    }
+    return menor;
+  }
+
+  bool get _hayDatosCapturados {
+    final hayTexto = [
+      _nombreController,
+      _apellidoPaternoController,
+      _apellidoMaternoController,
+      _fechaNacimientoController,
+      _curpController,
+      _rfcController,
+      _correoController,
+      _telefonoController,
+      _telefonoAltController,
+      _passwordController,
+      _cpController,
+      _paisController,
+      _estadoController,
+      _municipioController,
+      _coloniaController,
+      _calleController,
+      _numeroExtController,
+      _numeroIntController,
+      _empresaController,
+      _ingresoController,
+      _saldoInicialController,
+    ].any((c) => c.text.trim().isNotEmpty);
+
+    final haySeleccion = _sexo != null ||
+        _entidadNacimiento != null ||
+        _estadoCivil != null ||
+        _coloniaSeleccionada != null ||
+        _ocupacionSeleccionada != null ||
+        _tipoCuenta != null;
+
+    return hayTexto || haySeleccion;
+  }
+
+  Future<void> _confirmarRegresarInicio() async {
+    if (!_hayDatosCapturados) {
+      Navigator.of(context).pop();
+      return;
+    }
+    final confirmar = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('¿Estás seguro de regresar al inicio?'),
+        content: const Text('Perderás la información capturada en este registro.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Sí, regresar al inicio'),
+          ),
+        ],
+      ),
+    );
+    if (confirmar == true && mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  Widget _buildIndicadorProgreso() {
+    const etiquetas = ['Datos', 'Contacto', 'Domicilio', 'Laboral', 'Cuenta'];
+    return Row(
+      children: List.generate(_totalPasos, (i) {
+        final completado = i < _paso;
+        final actual = i == _paso;
+        final color = (completado || actual) ? AppTheme.primaryColor : Colors.grey;
+        return Expanded(
+          child: Column(
+            children: [
+              CircleAvatar(
+                radius: 13,
+                backgroundColor: actual ? AppTheme.primaryColor : (completado ? color : Colors.grey.shade300),
+                child: completado
+                    ? const Icon(Icons.check, size: 15, color: Colors.white)
+                    : Text(
+                        '${i + 1}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: actual ? Colors.white : Colors.grey.shade700,
+                        ),
+                      ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                etiquetas[i],
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: actual ? FontWeight.bold : FontWeight.normal,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        );
+      }),
     );
   }
 
@@ -1728,24 +2479,129 @@ class _RegisterScreenState extends State<RegisterScreen> {
     required IconData icon,
     required String errorKey,
     required String? Function(String?) validator,
+    String? altErrorKey,
     TextInputType? keyboardType,
     List<TextInputFormatter>? formatters,
     ValueChanged<String>? onChanged,
+    Widget? suffixIcon,
+    VoidCallback? onTap,
+    bool readOnly = false,
+    bool obscureText = false,
+    bool desactivarAutocompletado = false,
+    bool limpiarEspaciosExtremos = false,
+    bool actualizarCurpRfc = false,
+    bool bloquearTab = false,
+    TextCapitalization textCapitalization = TextCapitalization.none,
   }) {
-    return CustomTextField(
-      controller: controller,
-      label: label,
-      hint: hint,
-      prefixIcon: icon,
-      errorText: _serverErrors[errorKey],
-      keyboardType: keyboardType ?? TextInputType.text,
-      inputFormatters: formatters,
-      onChanged: (val) {
-        _limpiarErrorServidor(errorKey);
-        if (onChanged != null) onChanged(val);
-        setState(() {});
-      },
-      validator: validator,
+    final focusNode = _obtenerFocusNode(
+      errorKey,
+      controller,
+      limpiarEspaciosExtremos: limpiarEspaciosExtremos,
+      actualizarCurpRfc: actualizarCurpRfc,
+      bloquearTab: bloquearTab,
+    );
+    final avisoLimite = _avisosLimite[errorKey];
+    final errorServidor = _serverErrors[errorKey] ??
+        (altErrorKey != null ? _serverErrors[altErrorKey] : null);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextFormField(
+          controller: controller,
+          focusNode: focusNode,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
+          inputFormatters: formatters,
+          textCapitalization: textCapitalization,
+          readOnly: readOnly,
+          onTap: onTap,
+          obscureText: obscureText,
+          keyboardType: keyboardType ?? TextInputType.text,
+          autofillHints: desactivarAutocompletado ? const <String>[] : null,
+          enableSuggestions: !desactivarAutocompletado,
+          autocorrect: !desactivarAutocompletado,
+          enableIMEPersonalizedLearning: !desactivarAutocompletado,
+          validator: validator,
+          onChanged: (val) {
+            _limpiarErrorServidor(errorKey);
+            if (altErrorKey != null) {
+              _limpiarErrorServidor(altErrorKey);
+            }
+            if (onChanged != null) onChanged(val);
+            setState(() {});
+          },
+          decoration: InputDecoration(
+            labelText: label,
+            hintText: hint,
+            errorText: errorServidor,
+            errorMaxLines: 5,
+            helperMaxLines: 3,
+            prefixIcon: Icon(icon, size: 22),
+            suffixIcon: suffixIcon,
+          ),
+        ),
+        if (avisoLimite != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4, left: 12),
+            child: Text(
+              avisoLimite,
+              style: const TextStyle(
+                color: AppTheme.errorColor,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  // --- Control numérico (spinner) del Ingreso Mensual: flechas subir / bajar ---
+  static const double _ingresoPaso = 500.0;
+  static const double _ingresoMaximo = 9999999999.99;
+
+  void _ajustarIngreso(double delta) {
+    final actual = double.tryParse(_ingresoController.text.trim()) ?? 0.0;
+    var nuevo = actual + delta;
+    if (nuevo < 0) nuevo = 0; // nunca negativo
+    if (nuevo > _ingresoMaximo) nuevo = _ingresoMaximo; // respeta el máximo existente
+    final tieneDecimales = nuevo != nuevo.truncateToDouble();
+    final texto = tieneDecimales ? nuevo.toStringAsFixed(2) : nuevo.toStringAsFixed(0);
+    setState(() {
+      _ingresoController.text = texto;
+      _ingresoController.selection = TextSelection.collapsed(offset: texto.length);
+      _serverErrors.remove('ingresoMensual');
+      _avisosLimite.remove('ingresoMensual');
+    });
+    _formKey.currentState?.validate();
+  }
+
+  Widget _buildSpinnerIngreso() {
+    return SizedBox(
+      width: 40,
+      height: 48,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          InkWell(
+            onTap: () => _ajustarIngreso(_ingresoPaso),
+            child: const SizedBox(
+              height: 22,
+              width: 40,
+              child: Icon(Icons.keyboard_arrow_up, size: 22, color: AppTheme.primaryColor),
+            ),
+          ),
+          InkWell(
+            onTap: () => _ajustarIngreso(-_ingresoPaso),
+            child: const SizedBox(
+              height: 22,
+              width: 40,
+              child: Icon(Icons.keyboard_arrow_down, size: 22, color: AppTheme.primaryColor),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

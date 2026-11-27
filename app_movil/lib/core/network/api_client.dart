@@ -52,6 +52,7 @@ class ApiClient {
           final path = error.requestOptions.path;
           final isAuthEndpoint = path.contains('/auth/login') ||
               path.contains('/auth/2fa') ||
+              path.contains('/auth/recuperacion') ||
               path.contains('/clientes');
 
           // Detección de control de sesión única respaldada por el servidor (401 Unauthorized)

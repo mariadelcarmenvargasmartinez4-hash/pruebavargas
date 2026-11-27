@@ -70,12 +70,37 @@ public class PagoServicioEntity {
     @Builder.Default
     private String estatus = "APLICADO";
 
+    @Column(name = "num_autorizacion", length = 60)
+    private String numAutorizacion;
+
+    @Column(name = "id_tx_proveedor", length = 60)
+    private String idTxProveedor;
+
+    @Column(name = "nombre_producto", length = 150)
+    private String nombreProducto;
+
+    @Column(name = "nombre_servicio", length = 100)
+    private String nombreServicio;
+
+    @Column(name = "moneda", length = 5)
+    @Builder.Default
+    private String moneda = "MXN";
+
+    @Column(name = "confirmado_sin_cargo")
+    private Boolean confirmadoSinCargo;
+
+    @Column(name = "notificacion_enviada", nullable = false)
+    @Builder.Default
+    private Boolean notificacionEnviada = false;
+
     @Column(name = "fecha_operacion", nullable = false, updatable = false)
     private LocalDateTime fechaOperacion;
 
     @PrePersist
     public void prePersist() {
-        this.fechaOperacion = LocalDateTime.now();
+        this.fechaOperacion = Optional.ofNullable(this.fechaOperacion).orElseGet(LocalDateTime::now);
         this.estatus = Optional.ofNullable(this.estatus).orElse("APLICADO");
+        this.moneda = Optional.ofNullable(this.moneda).orElse("MXN");
+        this.notificacionEnviada = Optional.ofNullable(this.notificacionEnviada).orElse(false);
     }
 }

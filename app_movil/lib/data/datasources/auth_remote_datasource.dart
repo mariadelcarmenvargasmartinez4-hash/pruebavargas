@@ -58,4 +58,41 @@ class AuthRemoteDataSource {
     final response = await apiClient.dio.get(ApiConstants.sesion);
     return response.data as Map<String, dynamic>;
   }
+
+  Future<Map<String, dynamic>> solicitarRecuperacionPassword(String correo) async {
+    final response = await apiClient.dio.post(
+      ApiConstants.recuperacionSolicitar,
+      data: {'correo': correo},
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> verificarCodigoRecuperacion(String correo, String codigo) async {
+    final response = await apiClient.dio.post(
+      ApiConstants.recuperacionVerificar,
+      data: {
+        'correo': correo,
+        'codigo': codigo,
+      },
+    );
+    return response.data as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> restablecerPassword({
+    required String correo,
+    required String resetToken,
+    required String nuevaPassword,
+    required String confirmarPassword,
+  }) async {
+    final response = await apiClient.dio.post(
+      ApiConstants.recuperacionRestablecer,
+      data: {
+        'correo': correo,
+        'resetToken': resetToken,
+        'nuevaPassword': nuevaPassword,
+        'confirmarPassword': confirmarPassword,
+      },
+    );
+    return response.data as Map<String, dynamic>;
+  }
 }

@@ -1,13 +1,71 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive_util.dart';
 import '../../domain/entities/producto.dart';
+import '../../domain/entities/transaccion.dart';
 import '../state/banco_provider.dart';
+import '../widgets/comprobante_pago_widget.dart';
 import '../widgets/confirmation_dialog.dart';
 import '../widgets/custom_button.dart';
 import '../widgets/custom_text_field.dart';
+
+/// Permite exclusivamente letras (A-Z, a-z) y números (0-9), sin espacios ni símbolos,
+/// notificando cuando el usuario intenta escribir caracteres no permitidos.
+class _SoloAlfanumericoReferenciaFormatter extends TextInputFormatter {
+  final VoidCallback onCaracterNoPermitido;
+  final VoidCallback onCaracterValido;
+
+  _SoloAlfanumericoReferenciaFormatter({
+    required this.onCaracterNoPermitido,
+    required this.onCaracterValido,
+  });
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final raw = newValue.text;
+    final tieneInvalidos = RegExp(r'[^A-Za-z0-9]').hasMatch(raw);
+
+    if (!tieneInvalidos) {
+      if (raw != oldValue.text) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          onCaracterValido();
+        });
+      }
+      return newValue;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      onCaracterNoPermitido();
+    });
+
+    final cursor = newValue.selection.end.clamp(0, raw.length);
+    final buffer = StringBuffer();
+    int nuevoCursor = 0;
+    final regPermitido = RegExp(r'[A-Za-z0-9]');
+
+    for (int i = 0; i < raw.length; i++) {
+      final ch = raw[i];
+      if (regPermitido.hasMatch(ch)) {
+        buffer.write(ch);
+        if (i < cursor) nuevoCursor++;
+      }
+    }
+
+    final limpio = buffer.toString();
+    return TextEditingValue(
+      text: limpio,
+      selection: TextSelection.collapsed(
+        offset: nuevoCursor.clamp(0, limpio.length),
+      ),
+    );
+  }
+}
 
 class PagosScreen extends StatefulWidget {
   const PagosScreen({super.key});
@@ -19,11 +77,34 @@ class PagosScreen extends StatefulWidget {
 class _PagosScreenState extends State<PagosScreen> {
   final _referenciaController = TextEditingController();
   final _telefonoController = TextEditingController(text: '5512345678');
-  final _montoController = TextEditingController(text: '150.00');
+  final _montoController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
   Producto? _productoSeleccionado;
-  Map<String, dynamic>? _comprobante;
+  Transaccion? _comprobante;
+  String? _avisoReferenciaNoPermitida;
+  String? _errorProductoSeleccion;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final bp = context.read<BancoProvider>();
+      if (bp.productos.isEmpty && !bp.isLoadingProductos) {
+        bp.cargarProductos(forzar: true);
+      }
+    });
+  }
+
+  String? _validarReferencia(String? val) {
+    if (val == null || val.trim().isEmpty) {
+      return 'La referencia es obligatoria';
+    }
+    if (!RegExp(r'^[A-Za-z0-9]+$').hasMatch(val.trim())) {
+      return 'Solo se permiten letras (A-Z, a-z) y números (0-9), sin espacios ni símbolos';
+    }
+    return null;
+  }
 
   /// Genera un UPE de exactamente 10 caracteres (A-Z y 0-9) que SIEMPRE combina
   /// al menos una letra y al menos un número. Usa un generador criptográfico.
@@ -198,7 +279,12 @@ class _PagosScreenState extends State<PagosScreen> {
     );
   }
 
-  void _abrirBuscadorProductos(List<Producto> todosProductos) {
+  void _abrirBuscadorProductos(List<Producto> _) {
+    final bpInicial = context.read<BancoProvider>();
+    if (bpInicial.productos.isEmpty && !bpInicial.isLoadingProductos) {
+      bpInicial.cargarProductos(forzar: true);
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -209,6 +295,10 @@ class _PagosScreenState extends State<PagosScreen> {
 
         return StatefulBuilder(
           builder: (context, setModalState) {
+            final bancoProvModal = context.watch<BancoProvider>();
+            final todosProductos = bancoProvModal.productos;
+            final cargandoCatalogo = bancoProvModal.isLoadingProductos;
+
             final filtrados = todosProductos.where((p) {
               final textoCompleto = '${p.descripcion} ${p.servicio}'.toLowerCase();
               final matchQuery = query.isEmpty || textoCompleto.contains(query.toLowerCase());
@@ -310,38 +400,79 @@ class _PagosScreenState extends State<PagosScreen> {
                   ),
                   const Divider(height: 1),
                   Expanded(
-                    child: filtrados.isEmpty
+                    child: cargandoCatalogo
                         ? const Center(
-                            child: Text(
-                              'No se encontraron productos que coincidan con la búsqueda',
-                              style: TextStyle(color: AppTheme.textSecondary),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                CircularProgressIndicator(),
+                                SizedBox(height: 14),
+                                Text(
+                                  'Cargando productos y servicios reales de GestoPago...',
+                                  style: TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.w500),
+                                ),
+                              ],
                             ),
                           )
-                        : ListView.separated(
-                            itemCount: filtrados.length,
-                            separatorBuilder: (_, __) => const Divider(height: 1),
-                            itemBuilder: (ctx, idx) {
-                              final item = filtrados[idx];
-                              return ListTile(
-                                leading: _buildLogoBadge(item),
-                                title: Text(item.descripcion, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                                subtitle: Text('ID: ${item.idProducto} • Servicio: ${item.servicio}', style: const TextStyle(fontSize: 11)),
-                                trailing: Text(
-                                  item.monto > 0 ? '\$${item.monto.toStringAsFixed(2)}' : 'Monto abierto',
-                                  style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primaryColor),
+                        : todosProductos.isEmpty
+                            ? Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(24),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.cloud_sync_outlined, size: 48, color: Colors.grey.shade400),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        bancoProvModal.productosError ?? 'No hay productos cargados actualmente.',
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(color: AppTheme.textSecondary),
+                                      ),
+                                      const SizedBox(height: 14),
+                                      OutlinedButton.icon(
+                                        onPressed: () => bancoProvModal.cargarProductos(forzar: true),
+                                        icon: const Icon(Icons.refresh),
+                                        label: const Text('Actualizar catálogo de GestoPago'),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                                onTap: () {
-                                  setState(() {
-                                    _productoSeleccionado = item;
-                                    if (item.monto > 0) {
-                                      _montoController.text = item.monto.toStringAsFixed(2);
-                                    }
-                                  });
-                                  Navigator.of(context).pop();
-                                },
-                              );
-                            },
-                          ),
+                              )
+                            : filtrados.isEmpty
+                                ? const Center(
+                                    child: Text(
+                                      'No se encontraron productos que coincidan con la búsqueda',
+                                      style: TextStyle(color: AppTheme.textSecondary),
+                                    ),
+                                  )
+                                : ListView.separated(
+                                    itemCount: filtrados.length,
+                                    separatorBuilder: (_, __) => const Divider(height: 1),
+                                    itemBuilder: (ctx, idx) {
+                                      final item = filtrados[idx];
+                                      return ListTile(
+                                        leading: _buildLogoBadge(item),
+                                        title: Text(item.descripcion, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                                        subtitle: Text('ID: ${item.idProducto} • Servicio: ${item.servicio}', style: const TextStyle(fontSize: 11)),
+                                        trailing: Text(
+                                          item.monto > 0 ? '\$${item.monto.toStringAsFixed(2)}' : 'Monto abierto',
+                                          style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primaryColor),
+                                        ),
+                                        onTap: () {
+                                          setState(() {
+                                            _productoSeleccionado = item;
+                                            _errorProductoSeleccion = null;
+                                            if (item.monto > 0) {
+                                              _montoController.text = item.monto.toStringAsFixed(2);
+                                            } else {
+                                              _montoController.clear();
+                                            }
+                                          });
+                                          Navigator.of(context).pop();
+                                        },
+                                      );
+                                    },
+                                  ),
                   ),
                 ],
               ),
@@ -353,7 +484,35 @@ class _PagosScreenState extends State<PagosScreen> {
   }
 
   Future<void> _abrirModalConfirmacion() async {
+    setState(() => _avisoReferenciaNoPermitida = null);
+
+    if (_productoSeleccionado == null) {
+      setState(() {
+        _errorProductoSeleccion = 'Debe seleccionar primero un producto o servicio de GestoPago.';
+      });
+      _formKey.currentState?.validate();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Primero debe seleccionar un producto o servicio antes de realizar la operación.'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _errorProductoSeleccion = null);
     if (!_formKey.currentState!.validate()) return;
+
+    final refActual = _referenciaController.text.trim();
+    if (refActual.isEmpty || !RegExp(r'^[A-Za-z0-9]+$').hasMatch(refActual)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Debe ingresar una referencia válida (solo letras y números, sin espacios ni símbolos).'),
+          backgroundColor: AppTheme.errorColor,
+        ),
+      );
+      return;
+    }
 
     final bancoProvider = context.read<BancoProvider>();
     final cuenta = bancoProvider.cuentaSeleccionada;
@@ -368,8 +527,11 @@ class _PagosScreenState extends State<PagosScreen> {
       return;
     }
 
-    final monto = double.tryParse(_montoController.text.trim()) ?? 0.0;
-    final servicioNombre = _productoSeleccionado?.descripcion ?? 'Pago de Servicio GestoPago';
+    final productoActual = _productoSeleccionado!;
+    final monto = productoActual.monto > 0
+        ? productoActual.monto
+        : (double.tryParse(_montoController.text.trim()) ?? 0.0);
+    final servicioNombre = '${productoActual.descripcion} (${productoActual.servicio})';
 
     // 1. Mostrar diálogo de progreso mientras se genera y envía el PIN dinámico por correo
     showDialog(
@@ -414,7 +576,7 @@ class _PagosScreenState extends State<PagosScreen> {
     // 2. Abrir diálogo modal de confirmación con el campo para ingresar el PIN recibido en correo
     // UPE de exactamente 10 caracteres combinando letras y números, generado una sola vez por operación
     final upe10 = _generarUpe();
-    showDialog<bool>(
+    final mostrarComprobante = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => ConfirmationDialog(
@@ -422,9 +584,7 @@ class _PagosScreenState extends State<PagosScreen> {
         servicioNombre: servicioNombre,
         numeroCuenta: cuenta.numeroCuenta,
         monto: monto,
-        referencia: _referenciaController.text.trim().isNotEmpty
-            ? _referenciaController.text.trim()
-            : _telefonoController.text.trim(),
+        referencia: _referenciaController.text.trim(),
         upe: upe10,
         onResendPin: () async {
           await bancoProvider.solicitarPinTransaccional(
@@ -435,8 +595,8 @@ class _PagosScreenState extends State<PagosScreen> {
         },
         onConfirm: (pin) async {
           final exito = await bancoProvider.pagarServicio(
-            idServicio: _productoSeleccionado?.idServicio ?? 1,
-            idProducto: _productoSeleccionado?.idProducto ?? 101,
+            idServicio: productoActual.idServicio,
+            idProducto: productoActual.idProducto,
             monto: monto,
             upe: upe10,
             referencia: _referenciaController.text.trim(),
@@ -444,22 +604,34 @@ class _PagosScreenState extends State<PagosScreen> {
             pin: pin,
           );
 
-          if (!exito) {
+          // Si hubo error de validación previa (ej. PIN incorrecto) y NO existe comprobante del proveedor,
+          // permanecer en el diálogo de confirmación mostrando el mensaje de validación.
+          if (!exito && bancoProvider.ultimoComprobante == null) {
             throw Exception(bancoProvider.errorMessage ?? 'Error al procesar el pago.');
           }
-
-          setState(() {
-            _comprobante = {
-              'servicio': servicioNombre,
-              'cuenta': cuenta.numeroCuenta,
-              'monto': monto,
-              'fecha': DateTime.now().toString().substring(0, 19),
-              'autorizacion': 'GP-${DateTime.now().millisecondsSinceEpoch.toString().substring(5)}',
-            };
-          });
         },
       ),
     );
+
+    if (!mounted) return;
+    if (mostrarComprobante == true && bancoProvider.ultimoComprobante != null) {
+      final comprobanteReal = bancoProvider.ultimoComprobante!;
+      final fueAprobado = comprobanteReal.estatus.toUpperCase() == 'APLICADO';
+      await ComprobantePagoWidget.mostrarModal(
+        context,
+        transaccion: comprobanteReal,
+        fallbackProducto: productoActual.descripcion,
+        fallbackServicio: productoActual.servicio,
+        onClosed: () {
+          if (mounted && fueAprobado) {
+            setState(() {
+              _comprobante = null;
+              _referenciaController.clear();
+            });
+          }
+        },
+      );
+    }
   }
 
   @override
@@ -543,73 +715,142 @@ class _PagosScreenState extends State<PagosScreen> {
                               const SizedBox(height: 18),
 
                               // Selector y Buscador Interactivo de Catálogo de Productos
-                              InkWell(
-                                onTap: () => _abrirBuscadorProductos(bancoProvider.productos),
-                                borderRadius: BorderRadius.circular(10),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    border: Border.all(
-                                      color: _productoSeleccionado != null ? AppTheme.primaryColor : Colors.grey.shade400,
-                                      width: _productoSeleccionado != null ? 1.5 : 1,
-                                    ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  InkWell(
+                                    onTap: () => _abrirBuscadorProductos(bancoProvider.productos),
                                     borderRadius: BorderRadius.circular(10),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        border: Border.all(
+                                          color: _errorProductoSeleccion != null
+                                              ? AppTheme.errorColor
+                                              : (_productoSeleccionado != null ? AppTheme.primaryColor : Colors.grey.shade400),
+                                          width: (_errorProductoSeleccion != null || _productoSeleccionado != null) ? 1.5 : 1,
+                                        ),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          _productoSeleccionado != null
+                                              ? _buildLogoBadge(_productoSeleccionado!)
+                                              : const Icon(Icons.category_outlined, color: AppTheme.primaryColor),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  _productoSeleccionado != null
+                                                      ? '${_productoSeleccionado!.servicio} • ID ${_productoSeleccionado!.idProducto}'
+                                                      : 'Servicio / Producto GestoPago *',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: _productoSeleccionado != null ? FontWeight.w600 : FontWeight.normal,
+                                                    color: _productoSeleccionado != null ? AppTheme.secondaryColor : Colors.grey.shade700,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  _productoSeleccionado != null
+                                                      ? (_productoSeleccionado!.monto > 0
+                                                          ? '${_productoSeleccionado!.descripcion} (\$${_productoSeleccionado!.monto.toStringAsFixed(2)} MXN)'
+                                                          : '${_productoSeleccionado!.descripcion} (Monto abierto)')
+                                                      : (bancoProvider.isLoadingProductos
+                                                          ? 'Cargando catálogo de GestoPago...'
+                                                          : 'Seleccionar producto o servicio (${bancoProvider.productos.isNotEmpty ? "${bancoProvider.productos.length} disponibles" : "toca para ver catálogo"})...'),
+                                                  style: TextStyle(
+                                                    fontWeight: _productoSeleccionado != null ? FontWeight.bold : FontWeight.normal,
+                                                    color: _productoSeleccionado != null ? Colors.black87 : Colors.grey.shade600,
+                                                    fontSize: 13,
+                                                  ),
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          Container(
+                                            padding: const EdgeInsets.all(6),
+                                            decoration: BoxDecoration(
+                                              color: AppTheme.primaryColor.withOpacity(0.08),
+                                              borderRadius: BorderRadius.circular(8),
+                                            ),
+                                            child: bancoProvider.isLoadingProductos
+                                                ? const SizedBox(
+                                                    width: 18,
+                                                    height: 18,
+                                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                                  )
+                                                : const Icon(Icons.search, color: AppTheme.primaryColor, size: 20),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   ),
-                                  child: Row(
-                                    children: [
-                                      _productoSeleccionado != null
-                                          ? _buildLogoBadge(_productoSeleccionado!)
-                                          : const Icon(Icons.category_outlined, color: AppTheme.primaryColor),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              _productoSeleccionado != null
-                                                  ? 'Servicio seleccionado:'
-                                                  : 'Servicio / Producto GestoPago',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                color: _productoSeleccionado != null ? AppTheme.textSecondary : Colors.grey.shade700,
-                                              ),
-                                            ),
-                                            Text(
-                                              _productoSeleccionado != null
-                                                  ? '${_productoSeleccionado!.descripcion} (\$${_productoSeleccionado!.monto.toStringAsFixed(2)})'
-                                                  : 'Buscar o seleccionar en catálogo (900+ servicios)...',
-                                              style: TextStyle(
-                                                fontWeight: _productoSeleccionado != null ? FontWeight.bold : FontWeight.normal,
-                                                color: _productoSeleccionado != null ? Colors.black87 : Colors.grey.shade600,
-                                                fontSize: 13,
-                                              ),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ],
+                                  if (_errorProductoSeleccion != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 6, left: 12, right: 4),
+                                      child: Text(
+                                        _errorProductoSeleccion!,
+                                        style: const TextStyle(
+                                          color: AppTheme.errorColor,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
                                         ),
                                       ),
-                                      Container(
-                                        padding: const EdgeInsets.all(6),
-                                        decoration: BoxDecoration(
-                                          color: AppTheme.primaryColor.withOpacity(0.08),
-                                          borderRadius: BorderRadius.circular(8),
-                                        ),
-                                        child: const Icon(Icons.search, color: AppTheme.primaryColor, size: 20),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+                                    ),
+                                ],
                               ),
                               const SizedBox(height: 18),
 
                               // Referencia / UPE
-                              CustomTextField(
-                                controller: _referenciaController,
-                                label: 'Referencia / Contrato',
-                                hint: 'Número de servicio o contrato',
-                                prefixIcon: Icons.tag,
-                                keyboardType: TextInputType.text,
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  CustomTextField(
+                                    controller: _referenciaController,
+                                    label: 'Referencia / Contrato',
+                                    hint: 'Número de servicio o contrato (solo letras y números)',
+                                    prefixIcon: Icons.tag,
+                                    keyboardType: TextInputType.text,
+                                    autovalidateMode: AutovalidateMode.onUserInteraction,
+                                    inputFormatters: [
+                                      _SoloAlfanumericoReferenciaFormatter(
+                                        onCaracterNoPermitido: () {
+                                          if (mounted && _avisoReferenciaNoPermitida == null) {
+                                            setState(() {
+                                              _avisoReferenciaNoPermitida =
+                                                  'Carácter no permitido: la referencia solo acepta letras (A-Z, a-z) y números (0-9), sin espacios ni símbolos.';
+                                            });
+                                          }
+                                        },
+                                        onCaracterValido: () {
+                                          if (mounted && _avisoReferenciaNoPermitida != null) {
+                                            setState(() {
+                                              _avisoReferenciaNoPermitida = null;
+                                            });
+                                          }
+                                        },
+                                      ),
+                                    ],
+                                    validator: _validarReferencia,
+                                  ),
+                                  if (_avisoReferenciaNoPermitida != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 5, left: 12, right: 4),
+                                      child: Text(
+                                        _avisoReferenciaNoPermitida!,
+                                        style: const TextStyle(
+                                          color: AppTheme.errorColor,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                ],
                               ),
                               const SizedBox(height: 18),
 
@@ -631,9 +872,14 @@ class _PagosScreenState extends State<PagosScreen> {
                               CustomTextField(
                                 controller: _montoController,
                                 label: 'Monto a Pagar (MXN)',
+                                hint: _productoSeleccionado == null
+                                    ? 'Seleccione primero un producto o servicio'
+                                    : 'Ingrese el importe en MXN',
                                 prefixIcon: Icons.attach_money,
+                                readOnly: _productoSeleccionado != null && _productoSeleccionado!.monto > 0,
                                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                                 validator: (val) {
+                                  if (_productoSeleccionado == null) return 'Seleccione primero un producto o servicio';
                                   if (val == null || val.trim().isEmpty) return 'El monto es obligatorio';
                                   final num = double.tryParse(val.trim());
                                   if (num == null || num <= 0) return 'El monto debe ser mayor a 0';
@@ -661,59 +907,14 @@ class _PagosScreenState extends State<PagosScreen> {
   }
 
   Widget _buildComprobanteExito() {
-    return Card(
-      elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircleAvatar(
-              radius: 36,
-              backgroundColor: Color(0xFFE8F5E9),
-              child: Icon(Icons.check_circle_rounded, color: AppTheme.successColor, size: 48),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              '¡Pago Exitoso!',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: AppTheme.successColor),
-            ),
-            const SizedBox(height: 4),
-            const Text('Transacción autorizada y aplicada en GestoPago', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
-            const Divider(height: 32),
-            _buildReciboRow('Servicio:', _comprobante!['servicio']),
-            _buildReciboRow('Cuenta Debitada:', _comprobante!['cuenta']),
-            _buildReciboRow('Importe:', '\$${(_comprobante!['monto'] as double).toStringAsFixed(2)} MXN'),
-            _buildReciboRow('Folio Autorización:', _comprobante!['autorizacion']),
-            _buildReciboRow('Fecha / Hora:', _comprobante!['fecha']),
-            const SizedBox(height: 28),
-            CustomButton(
-              text: 'Realizar Otro Pago',
-              icon: Icons.refresh,
-              onPressed: () {
-                setState(() {
-                  _comprobante = null;
-                  _referenciaController.clear();
-                });
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildReciboRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-        ],
-      ),
+    if (_comprobante == null) return const SizedBox.shrink();
+    return ComprobantePagoWidget(
+      transaccion: _comprobante!,
+      fallbackProducto: _productoSeleccionado?.descripcion,
+      fallbackServicio: _productoSeleccionado?.servicio,
+      onCerrar: () {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      },
     );
   }
 }

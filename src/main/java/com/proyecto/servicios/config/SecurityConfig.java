@@ -44,7 +44,7 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
                         // 1. Rutas Públicas: Autenticación, 2FA, Registro inicial de cliente, Catálogos públicos y Swagger OpenAPI
-                        .requestMatchers(HttpMethod.POST, "/auth/login", "/auth/2fa/**", "/clientes").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/auth/login", "/auth/2fa/**", "/auth/recuperacion/**", "/clientes").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/catalogos/**").permitAll()
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**", "/actuator/health").permitAll()
 

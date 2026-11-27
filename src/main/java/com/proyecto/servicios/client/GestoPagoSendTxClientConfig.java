@@ -57,7 +57,9 @@ public class GestoPagoSendTxClientConfig {
             String codigo = firstTagText(doc, "CODIGO_MENSAJE", "CODIGO");
             String mensaje = firstTagText(doc, "MENSAJE", "TEXTO");
             String numAutorizacion = firstTagText(doc, "NUM_AUTORIZACION", "AUTORIZACION_ID");
+            String idTxProveedor = firstTagText(doc, "ID_TX", "TRANSACCION_ID", "ID_TRANSACCION", "TRANSACCION");
             String folio = firstTagText(doc, "FOLIO", "ID_TX", "TRANSACCION");
+            String fechaHora = firstTagText(doc, "DATE_SEND_TX", "FECHA_HORA", "FECHA");
 
             if ((folio == null || folio.isBlank())
                     && numAutorizacion != null
@@ -71,7 +73,9 @@ public class GestoPagoSendTxClientConfig {
                     .codigo(codigo)
                     .mensaje(mensaje)
                     .autorizacion(numAutorizacion)
+                    .idTxProveedor(idTxProveedor)
                     .folioTransaccion(folio)
+                    .fechaHora(fechaHora)
                     .build();
         } catch (Exception ex) {
             log.error("Error al parsear respuesta XML de SendTx GestoPago: {}", ex.getMessage());

@@ -4,6 +4,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive_util.dart';
 import '../../domain/entities/transaccion.dart';
 import '../state/banco_provider.dart';
+import '../widgets/comprobante_pago_widget.dart';
 import '../widgets/loading_spinner.dart';
 
 class HistorialScreen extends StatefulWidget {
@@ -187,8 +188,12 @@ class _HistorialScreenState extends State<HistorialScreen> {
   }
 
   DataRow _buildTransaccionRow(BuildContext context, Transaccion tx) {
-    final bool esAplicado = tx.estatus.toUpperCase() == 'APLICADO';
-    final Color colorEstatus = esAplicado ? AppTheme.successColor : Colors.amber.shade800;
+    final String estUpper = tx.estatus.toUpperCase();
+    final bool esAplicado = estUpper == 'APLICADO';
+    final bool esRechazado = estUpper.startsWith('RECHAZAD');
+    final Color colorEstatus = esAplicado
+        ? AppTheme.successColor
+        : (esRechazado ? AppTheme.errorColor : Colors.amber.shade800);
     final String fechaFormateada = tx.fechaOperacion.isNotEmpty
         ? tx.fechaOperacion.replaceFirst('T', ' ').split('.').first
         : '-';
@@ -213,8 +218,13 @@ class _HistorialScreenState extends State<HistorialScreen> {
         DataCell(Text(tx.upe, style: const TextStyle(fontFamily: 'monospace', fontSize: 11))),
         DataCell(
           Text(
-            '-\$${tx.monto.toStringAsFixed(2)}',
-            style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.errorColor, fontSize: 13),
+            esAplicado ? '-\$${tx.monto.toStringAsFixed(2)}' : '\$${tx.monto.toStringAsFixed(2)}',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: esAplicado ? AppTheme.errorColor : AppTheme.textSecondary,
+              decoration: esRechazado ? TextDecoration.lineThrough : TextDecoration.none,
+              fontSize: 13,
+            ),
           ),
         ),
         DataCell(
@@ -237,38 +247,9 @@ class _HistorialScreenState extends State<HistorialScreen> {
   }
 
   void _mostrarComprobanteDialog(BuildContext context, Transaccion tx) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Row(
-          children: const [
-            Icon(Icons.verified, color: AppTheme.primaryColor),
-            SizedBox(width: 8),
-            Text('Comprobante de Pago'),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildInfoItem('Folio Transacción:', tx.folioTransaccion),
-            _buildInfoItem('Identificador UPE:', tx.upe),
-            _buildInfoItem('Cuenta Débito:', tx.numCuenta),
-            _buildInfoItem('Tipo de Pago:', tx.tipoOperacion),
-            _buildInfoItem('Destino / Referencia:', tx.destinoPago),
-            _buildInfoItem('Importe Aplicado:', '\$${tx.monto.toStringAsFixed(2)} MXN'),
-            _buildInfoItem('Fecha y Hora:', tx.fechaOperacion),
-            _buildInfoItem('Estatus:', tx.estatus),
-            if (tx.mensaje.isNotEmpty) _buildInfoItem('Mensaje:', tx.mensaje),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cerrar'),
-          ),
-        ],
-      ),
+    ComprobantePagoWidget.mostrarModal(
+      context,
+      transaccion: tx,
     );
   }
 

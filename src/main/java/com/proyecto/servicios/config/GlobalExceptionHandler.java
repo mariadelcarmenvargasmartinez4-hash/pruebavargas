@@ -14,6 +14,7 @@ import com.proyecto.servicios.exception.CredencialesInvalidasException;
 import com.proyecto.servicios.exception.CuentaNoEncontradaException;
 import com.proyecto.servicios.exception.EntidadNoProcesableException;
 import com.proyecto.servicios.exception.CurpDuplicadaException;
+import com.proyecto.servicios.exception.PagoRechazadoProveedorException;
 import com.proyecto.servicios.exception.PasswordInvalidaException;
 import com.proyecto.servicios.exception.ProveedorPagoException;
 import com.proyecto.servicios.exception.ReglaNegocioException;
@@ -197,6 +198,17 @@ public class GlobalExceptionHandler {
     }
 
     // 8. Reglas de negocio y validaciones semánticas (400 BAD REQUEST)
+    @ExceptionHandler(PagoRechazadoProveedorException.class)
+    public ResponseEntity<GenericResponse<Object>> handlePagoRechazadoProveedorException(PagoRechazadoProveedorException ex) {
+        log.warn("Operación rechazada por proveedor externo (400 BAD REQUEST): {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(GenericResponse.<Object>builder()
+                        .codigo(HttpStatus.BAD_REQUEST.value())
+                        .mensaje(ex.getMessage())
+                        .datos(ex.getComprobante())
+                        .build());
+    }
+
     @ExceptionHandler(ReglaNegocioException.class)
     public ResponseEntity<GenericResponse<Object>> handleReglaNegocioException(ReglaNegocioException ex) {
         log.warn("Regla de negocio no satisfecha (400 BAD REQUEST): {}", ex.getMessage());

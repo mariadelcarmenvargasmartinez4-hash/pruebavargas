@@ -1,5 +1,6 @@
 package com.proyecto.servicios.model.gestopago;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -21,7 +22,11 @@ public class GestoPagoSendTxResponse implements Serializable {
     private String codigo;
     private String mensaje;
     private String folioTransaccion;
+    @JsonAlias({"numAutorizacion", "NUM_AUTORIZACION"})
     private String autorizacion;
+    @JsonAlias({"id_tx", "idTx", "ID_TX", "transaccionId"})
+    private String idTxProveedor;
+    @JsonAlias({"dateSendTx", "DATE_SEND_TX", "FECHA"})
     private String fechaHora;
 
     /**

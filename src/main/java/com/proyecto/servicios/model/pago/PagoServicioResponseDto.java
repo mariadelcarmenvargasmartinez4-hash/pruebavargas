@@ -20,6 +20,9 @@ import java.time.LocalDateTime;
 @Schema(description = "Respuesta del procesamiento de pago de servicio o recarga")
 public class PagoServicioResponseDto implements Serializable {
 
+    @Schema(description = "Identificador numérico secuencial del folio de operación", example = "1")
+    private Long id;
+
     @Schema(description = "Folio único de la transacción", example = "TX-8f3a9e2b-1234-5678-abcd-ef0123456789")
     private String folioTransaccion;
 
@@ -61,6 +64,30 @@ public class PagoServicioResponseDto implements Serializable {
 
     @Schema(description = "Mensaje informativo de confirmación", example = "Pago de servicio procesado y aplicado exitosamente")
     private String mensaje;
+
+    @Schema(description = "Moneda de la operación", example = "MXN")
+    private String moneda;
+
+    @Schema(description = "Nombre del producto o servicio adquirido")
+    private String nombreProducto;
+
+    @Schema(description = "Nombre del proveedor o servicio en catálogo")
+    private String nombreServicio;
+
+    @Schema(description = "Número de autorización real devuelto por GestoPago")
+    private String numAutorizacion;
+
+    @Schema(description = "ID de transacción devuelto por el proveedor, cuando está disponible")
+    private String idTxProveedor;
+
+    @Schema(description = "Teléfono de atención a clientes GestoPago", example = "800-437-8672")
+    private String atencionClientes;
+
+    @Schema(description = "Nombre del servicio gateway", example = "GestoPago Gateway 2.0")
+    private String nombreGateway;
+
+    @Schema(description = "Indica si el proveedor confirmó el rechazo sin aplicar ningún cargo")
+    private Boolean confirmadoSinCargo;
 
     @Schema(description = "Fecha y hora en que se aplicó el pago")
     private LocalDateTime fechaOperacion;

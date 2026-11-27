@@ -6,8 +6,8 @@ import '../../core/theme/app_theme.dart';
 import '../../core/utils/responsive_util.dart';
 import '../state/auth_provider.dart';
 import '../widgets/custom_button.dart';
-import '../widgets/custom_text_field.dart';
 import 'dashboard_screen.dart';
+import 'recuperar_password_screen.dart';
 import 'register_screen.dart';
 import 'two_factor_screen.dart';
 
@@ -19,10 +19,17 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _correoController = TextEditingController(text: 'admin@gestopago.com');
-  final _passwordController = TextEditingController(text: 'Segura123#');
+  final _correoController = TextEditingController();
+  final _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   bool _obscurePassword = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _correoController.clear();
+    _passwordController.clear();
+  }
 
   @override
   void dispose() {
@@ -218,12 +225,18 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(height: 28),
 
                         // Campo Correo / Usuario
-                        CustomTextField(
+                        TextFormField(
                           controller: _correoController,
-                          label: 'Correo Electrónico',
-                          hint: 'usuario@ejemplo.com',
-                          prefixIcon: Icons.email_outlined,
                           keyboardType: TextInputType.emailAddress,
+                          autofillHints: const <String>[],
+                          enableSuggestions: false,
+                          autocorrect: false,
+                          enableIMEPersonalizedLearning: false,
+                          decoration: const InputDecoration(
+                            labelText: 'Correo Electrónico',
+                            hintText: 'usuario@ejemplo.com',
+                            prefixIcon: Icon(Icons.email_outlined, size: 22),
+                          ),
                           validator: (val) {
                             if (val == null || val.trim().isEmpty) return 'El correo es obligatorio';
                             if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(val.trim())) {
@@ -235,25 +248,59 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(height: 18),
 
                         // Campo Contraseña
-                        CustomTextField(
+                        TextFormField(
                           controller: _passwordController,
-                          label: 'Contraseña',
-                          prefixIcon: Icons.lock_outline,
                           obscureText: _obscurePassword,
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                              size: 20,
-                              color: AppTheme.textSecondary,
+                          autofillHints: const <String>[],
+                          enableSuggestions: false,
+                          autocorrect: false,
+                          enableIMEPersonalizedLearning: false,
+                          decoration: InputDecoration(
+                            labelText: 'Contraseña',
+                            prefixIcon: const Icon(Icons.lock_outline, size: 22),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                                size: 20,
+                                color: AppTheme.textSecondary,
+                              ),
+                              onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                             ),
-                            onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                           ),
                           validator: (val) {
                             if (val == null || val.isEmpty) return 'La contraseña es obligatoria';
                             return null;
                           },
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 6),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: () async {
+                              final recuperada = await Navigator.of(context).push<bool>(
+                                MaterialPageRoute(
+                                  builder: (_) => const RecuperarPasswordScreen(),
+                                ),
+                              );
+                              if (recuperada == true && mounted) {
+                                FocusManager.instance.primaryFocus?.unfocus();
+                                setState(() {
+                                  _correoController.clear();
+                                  _passwordController.clear();
+                                });
+                              }
+                            },
+                            child: const Text(
+                              '¿Olvidaste tu contraseña?',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.primaryColor,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
 
                         // Botón de Inicio de Sesión
                         CustomButton(
@@ -273,12 +320,14 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                             TextButton(
                               onPressed: () async {
-                                final nuevoCorreo = await Navigator.of(context).push<String>(
+                                final registroCompletado = await Navigator.of(context).push<bool>(
                                   MaterialPageRoute(builder: (_) => const RegisterScreen()),
                                 );
-                                if (nuevoCorreo != null && nuevoCorreo.isNotEmpty) {
+                                if (registroCompletado == true && mounted) {
+                                  FocusManager.instance.primaryFocus?.unfocus();
                                   setState(() {
-                                    _correoController.text = nuevoCorreo;
+                                    _correoController.clear();
+                                    _passwordController.clear();
                                   });
                                 }
                               },

@@ -14,6 +14,9 @@ class ApiConstants {
   static const String verificar2fa = '/auth/2fa/verificar';
   static const String logout = '/auth/logout';
   static const String sesion = '/auth/sesion';
+  static const String recuperacionSolicitar = '/auth/recuperacion/solicitar';
+  static const String recuperacionVerificar = '/auth/recuperacion/verificar';
+  static const String recuperacionRestablecer = '/auth/recuperacion/restablecer';
 
   // Endpoints Negocio Bancario y Servicios
   static const String clientes = '/clientes';

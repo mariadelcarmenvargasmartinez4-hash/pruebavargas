@@ -1,5 +1,7 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import '../../core/network/api_client.dart';
+import '../../data/models/transaccion_model.dart';
 import '../../domain/entities/cuenta.dart';
 import '../../domain/entities/producto.dart';
 import '../../domain/entities/transaccion.dart';
@@ -10,24 +12,35 @@ class BancoProvider extends ChangeNotifier {
 
   bool _isLoading = false;
   bool _isLoadingHistorial = false;
+  bool _isLoadingProductos = false;
   String? _errorMessage;
+  String? _productosError;
   String? _successMessage;
 
   List<Cuenta> _cuentas = [];
   Cuenta? _cuentaSeleccionada;
   List<Producto> _productos = [];
   List<Transaccion> _historialTransacciones = [];
+  Transaccion? _ultimoComprobante;
 
   BancoProvider({required this.bancoRepository});
 
   bool get isLoading => _isLoading;
   bool get isLoadingHistorial => _isLoadingHistorial;
+  bool get isLoadingProductos => _isLoadingProductos;
   String? get errorMessage => _errorMessage;
+  String? get productosError => _productosError;
   String? get successMessage => _successMessage;
   List<Cuenta> get cuentas => _cuentas;
   Cuenta? get cuentaSeleccionada => _cuentaSeleccionada;
   List<Producto> get productos => _productos;
   List<Transaccion> get historialTransacciones => _historialTransacciones;
+  Transaccion? get ultimoComprobante => _ultimoComprobante;
+
+  void limpiarUltimoComprobante() {
+    _ultimoComprobante = null;
+    notifyListeners();
+  }
 
   void seleccionarCuenta(Cuenta cuenta) {
     _cuentaSeleccionada = cuenta;
@@ -63,8 +76,7 @@ class BancoProvider extends ChangeNotifier {
       }
 
       if (_productos.isEmpty) {
-        final resProductos = await bancoRepository.getProductos();
-        _productos = resProductos;
+        await cargarProductos();
       }
 
       if (_cuentaSeleccionada != null) {
@@ -76,6 +88,28 @@ class BancoProvider extends ChangeNotifier {
     } catch (e) {
       _isLoading = false;
       _errorMessage = ApiClient.parseError(e);
+      notifyListeners();
+    }
+  }
+
+  Future<void> cargarProductos({bool forzar = false}) async {
+    if (_isLoadingProductos) return;
+    if (!forzar && _productos.isNotEmpty) return;
+
+    _isLoadingProductos = true;
+    _productosError = null;
+    notifyListeners();
+
+    try {
+      final resProductos = await bancoRepository.getProductos();
+      _productos = resProductos;
+      if (_productos.isEmpty) {
+        _productosError = 'No se recibieron productos del catálogo de GestoPago.';
+      }
+    } catch (e) {
+      _productosError = ApiClient.parseError(e);
+    } finally {
+      _isLoadingProductos = false;
       notifyListeners();
     }
   }
@@ -140,6 +174,7 @@ class BancoProvider extends ChangeNotifier {
     _isLoading = true;
     _errorMessage = null;
     _successMessage = null;
+    _ultimoComprobante = null;
     notifyListeners();
 
     try {
@@ -154,12 +189,30 @@ class BancoProvider extends ChangeNotifier {
         pin: pin,
       );
 
+      if (res['datos'] is Map) {
+        _ultimoComprobante = TransaccionModel.fromJson(
+          Map<String, dynamic>.from(res['datos'] as Map),
+        );
+      }
+
       _successMessage = res['mensaje'] ?? 'Pago procesado exitosamente por GestoPago.';
       await cargarDatosDashboard(); // Refrescar saldos e historial actualizados
       _isLoading = false;
       notifyListeners();
       return true;
     } catch (e) {
+      if (e is DioException && e.response?.data is Map) {
+        final respMap = e.response!.data as Map;
+        if (respMap['datos'] is Map) {
+          final datosMap = Map<String, dynamic>.from(respMap['datos'] as Map);
+          if (datosMap.containsKey('estatus') && datosMap.containsKey('upe')) {
+            _ultimoComprobante = TransaccionModel.fromJson(datosMap);
+            if (_cuentaSeleccionada != null) {
+              await cargarHistorial(_cuentaSeleccionada!.numeroCuenta);
+            }
+          }
+        }
+      }
       _isLoading = false;
       _errorMessage = ApiClient.parseError(e);
       notifyListeners();
